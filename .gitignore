@@ -1,0 +1,57 @@
+# Build output .NET
+backend/**/bin/
+backend/**/obj/
+backend/**/*.user
+backend/**/*.suo
+backend/**/appsettings.*.local.json
+
+# Log và tiến trình chạy nền của script local
+backend/logs/
+backend/.run/
+*.log
+
+# Node / frontend
+frontend/node_modules/
+frontend/**/node_modules/
+frontend/dist/
+frontend/**/dist/
+frontend/.vite/
+frontend/**/.vite/
+frontend/.pnpm-store/
+pnpm-debug.log*
+*.tsbuildinfo
+
+# Biến môi trường: chỉ commit file mẫu
+backend/.env
+frontend/.env
+frontend/**/.env
+!**/.env.example
+
+# IDE
+.vs/
+.idea/
+.vscode/
+*.user
+launchSettings.local.json
+
+# Hệ điều hành
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# File tạm khi debug
+*.local.json
+*.orig
+*.rej
+
+# Ảnh chụp và báo cáo sinh ra khi kiểm thử giao diện
+frontend/output/
+frontend/.taste-skill/
+
+*storybook.log
+storybook-static
+
+# Nhật ký làm việc cục bộ (không đưa lên git)
+docs/git/
+docs/concepts/
+docs/adr/
