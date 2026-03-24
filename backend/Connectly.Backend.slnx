@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="src/BuildingBlocks/BuildingBlocks/BuildingBlocks.csproj" />
+  <Project Path="src/BuildingBlocks/BuildingBlocks.Messaging/BuildingBlocks.Messaging.csproj" />
+  <Project Path="src/Contracts/Connectly.Contracts/Connectly.Contracts.csproj" />
+  <Project Path="src/ApiGateways/YarpApiGateway/YarpApiGateway.csproj" />
+  <Project Path="src/Services/Identity/Identity.API/Identity.API.csproj" />
+  <Project Path="src/Services/Social/Social.API/Social.API.csproj" />
+  <Project Path="src/Services/Chat/Chat.API/Chat.API.csproj" />
+  <Project Path="src/Services/Notification/Notification.API/Notification.API.csproj" />
+</Solution>
