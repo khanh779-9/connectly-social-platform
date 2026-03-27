@@ -23,3 +23,23 @@ public static class DotEnv
             if (value.Length >= 2 && ((value.StartsWith('"') && value.EndsWith('"')) || (value.StartsWith('\'') && value.EndsWith('\''))))
                 value = value[1..^1];
 
+            if (string.IsNullOrWhiteSpace(key)) continue;
+            // existing env (e.g. docker-compose overrides) take precedence
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable(key))) continue;
+            Environment.SetEnvironmentVariable(key, value);
+        }
+    }
+
+    private static string? FindUp(string fileName, string startDir, int maxLevels)
+    {
+        var dir = new DirectoryInfo(startDir);
+        for (var i = 0; i < maxLevels && dir is not null; i++)
+        {
+            var candidate = Path.Combine(dir.FullName, fileName);
+            if (File.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        return null;
+    }
+}
+
