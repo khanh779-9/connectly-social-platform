@@ -42,3 +42,26 @@ public static class ConnectlyTokens
         var now = DateTimeOffset.UtcNow;
         var handler = new JwtSecurityTokenHandler();
 
+        var claims = new List<Claim>
+        {
+            new("sub", userId.ToString()),
+            new("name", displayName),
+            new("jti", Guid.NewGuid().ToString())
+        };
+        if (!string.IsNullOrEmpty(email)) claims.Add(new("email", email));
+
+        var token = new JwtSecurityToken(
+            issuer: jwt.Issuer,
+            audience: jwt.Audience,
+            claims: claims,
+            notBefore: now.UtcDateTime,
+            expires: now.AddMinutes(jwt.AccessTokenTtlMinutes).UtcDateTime,
+            signingCredentials: new SigningCredentials(
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Secret)),
+                SecurityAlgorithms.HmacSha256Signature));
+
+        return (handler.WriteToken(token), now.AddMinutes(jwt.AccessTokenTtlMinutes));
+    }
+}
+
+
