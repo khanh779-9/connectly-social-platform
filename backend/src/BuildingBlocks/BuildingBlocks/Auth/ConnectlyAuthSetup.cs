@@ -48,3 +48,45 @@ public static class ConnectlyAuthSetup
     {
         var jwt = ConnectlyEnv.LoadJwtOptions();
 
+        services
+            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidIssuer = jwt.Issuer,
+                    ValidateAudience = true,
+                    ValidAudience = jwt.Audience,
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                        System.Text.Encoding.UTF8.GetBytes(jwt.Secret)),
+                    ValidateLifetime = true,
+                    ClockSkew = jwt.ClockSkew,
+                    NameClaimType = "name",
+                    RoleClaimType = "role"
+                };
+
+                // SignalR browsers cannot set headers: allow `?access_token=` on hub paths only.
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        var accessToken = context.Request.Query["access_token"];
+                        var path = context.HttpContext.Request.Path;
+                        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                            context.Token = accessToken;
+                        return System.Threading.Tasks.Task.CompletedTask;
+                    }
+                };
+            });
+
+        services.AddAuthorization();
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUser, CurrentUser>();
+        return services;
+    }
+}
+
+
+
