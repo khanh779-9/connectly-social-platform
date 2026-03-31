@@ -12,3 +12,18 @@ public static class MigrationRunner
         var migrate = ConnectlyEnv.GetBool("MIGRATE_ON_STARTUP", false);
         if (!migrate) return;
 
+        using var scope = rootServices.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TDb>();
+        var pending = db.Database.GetPendingMigrations().ToList();
+        if (pending.Any())
+        {
+            db.Database.Migrate();
+        }
+        else if (!db.Database.GetMigrations().Any())
+        {
+            // dev shortcut before the first `dotnet ef migrations add` was run
+            db.Database.EnsureCreated();
+        }
+    }
+}
+
