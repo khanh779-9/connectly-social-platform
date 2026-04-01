@@ -84,3 +84,78 @@ public sealed class SeaweedFsStorage : IFileStorage
         return _client.GetPreSignedURL(request);
     }
 
+    public async Task<string> GenerateDownloadUrlAsync(string objectKey, int ttlMinutes = 0, CancellationToken ct = default)
+    {
+        var request = new GetPreSignedUrlRequest
+        {
+            BucketName = _options.Bucket,
+            Key = objectKey,
+            Verb = HttpVerb.GET,
+            Protocol = ProtocolFor(),
+            Expires = DateTime.UtcNow.AddMinutes(ResolveTtl(ttlMinutes, _options.DownloadUrlTtlMinutes))
+        };
+        return _client.GetPreSignedURL(request);
+    }
+
+    public async Task PutObjectAsync(string objectKey, Stream content, string contentType, CancellationToken ct = default)
+    {
+        await EnsureBucketAsync(ct);
+        var request = new PutObjectRequest
+        {
+            BucketName = _options.Bucket,
+            Key = objectKey,
+            InputStream = content,
+            ContentType = contentType,
+            // The client measures the body before sending it.
+            AutoResetStreamPosition = true
+        };
+        // Oracle Object Storage only accepts the AWS chunked streaming form.
+        if (_options.AwsChunked) request.Headers["Content-Encoding"] = "aws-chunked";
+        await _client.PutObjectAsync(request, ct);
+    }
+
+    public async Task DeleteObjectAsync(string objectKey, CancellationToken ct = default)
+        => await _client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = _options.Bucket, Key = objectKey }, ct);
+
+    public async Task<StoredObjectInfo?> GetObjectInfoAsync(string objectKey, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _client.GetObjectMetadataAsync(
+                new GetObjectMetadataRequest { BucketName = _options.Bucket, Key = objectKey }, ct);
+            return new StoredObjectInfo(response.ContentLength, response.Headers.ContentType);
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound
+                                            || ex.ErrorCode.Contains("NoSuchKey"))
+        {
+            return null;
+        }
+    }
+
+    public async Task EnsureBucketAsync(CancellationToken ct = default)
+    {
+        if (_bucketEnsured) return;
+        await EnsureBucketLock.WaitAsync(ct);
+        try
+        {
+            if (_bucketEnsured) return;
+            try
+            {
+                await _client.GetBucketLocationAsync(new GetBucketLocationRequest { BucketName = _options.Bucket }, ct);
+            }
+            catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound || ex.ErrorCode.Contains("NoSuchBucket"))
+            {
+                await _client.PutBucketAsync(new PutBucketRequest { BucketName = _options.Bucket }, ct);
+            }
+            _bucketEnsured = true;
+        }
+        finally { EnsureBucketLock.Release(); }
+    }
+
+    /// <summary>An explicit TTL wins; otherwise the value configured for this environment applies.</summary>
+    private static int ResolveTtl(int requestedMinutes, int configuredMinutes) =>
+        requestedMinutes > 0 ? requestedMinutes : configuredMinutes;
+
+    /// <summary>Pre-signed URLs must use the scheme the endpoint really serves.</summary>
+    private Protocol ProtocolFor() => _options.Secure ? Protocol.HTTPS : Protocol.HTTP;
+}
