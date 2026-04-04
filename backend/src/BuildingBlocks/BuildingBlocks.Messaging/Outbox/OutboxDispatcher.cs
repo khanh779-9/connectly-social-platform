@@ -49,3 +49,45 @@ public sealed class OutboxDispatcher<TDb> : BackgroundService where TDb : DbCont
         }
     }
 
+    private async Task<int> DispatchBatchAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TDb>();
+        var publisher = scope.ServiceProvider.GetRequiredService<IRabbitEventPublisher>();
+
+        var pending = await db.OutboxMessages
+            .Where(m => m.ProcessedAt == null)
+            .OrderBy(m => m.OccurredAt)
+            .Take(_options.OutboxDispatchBatchSize)
+            .ToListAsync(ct);
+        if (pending.Count == 0) return 0;
+
+        var published = 0;
+        foreach (var message in pending)
+        {
+            try
+            {
+                // events that intentionally have no consumer today are fire-and-forget:
+                // there is no queue to deliver to, so a missing binding must not keep
+                // the row in the outbox forever
+                var expectsConsumer = _options.ExpectsConsumer?.Invoke(message.EventType) ?? true;
+                await publisher.EnvelopePublishAsync(message.EventType, message.Payload, expectsConsumer);
+                message.ProcessedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(ct);
+                published++;
+            }
+            catch (Exception ex)
+            {
+                message.Attempts++;
+                message.LastError = ex.Message[..Math.Min(ex.Message.Length, 500)];
+                await db.SaveChangesAsync(ct);
+                _logger.LogWarning(ex, "Outbox publish attempt {Attempt} failed for {EventType}", message.Attempts, message.EventType);
+                // stop the batch: the next pass retries this row, so a failing event
+                // does not spin the dispatcher at full speed
+                break;
+            }
+        }
+        return published;
+    }
+}
+
