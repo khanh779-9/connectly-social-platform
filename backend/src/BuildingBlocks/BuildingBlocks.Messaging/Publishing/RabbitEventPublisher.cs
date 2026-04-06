@@ -54,3 +54,50 @@ public sealed class RabbitEventPublisher : IRabbitEventPublisher, IDisposable
         return _channel;
     }
 
+    /// <summary>
+    /// A message published with mandatory=true and no matching queue comes back to the
+    /// publisher instead of being dropped by the broker.
+    /// </summary>
+    private Task OnBasicReturn(object? sender, BasicReturnEventArgs args)
+    {
+        var messageId = args.BasicProperties.MessageId;
+        if (!string.IsNullOrEmpty(messageId)) _returned[messageId] = $"{args.ReplyCode} {args.ReplyText}";
+        return Task.CompletedTask;
+    }
+
+    public async Task EnvelopePublishAsync(string eventType, string jsonEnvelope, bool requireRouting = true)
+    {
+        using var linked = new CancellationTokenSource(ConnectlyEnv.RabbitPublishTimeout());
+        var channel = await GetChannelAsync(linked.Token);
+        var messageId = Guid.NewGuid().ToString();
+        var properties = new BasicProperties
+        {
+            Persistent = true,
+            ContentType = "application/json",
+            Type = eventType,
+            MessageId = messageId,
+        };
+
+        // mandatory=true: the broker must not discard the message when nothing is bound to it.
+        await channel.BasicPublishAsync(
+            exchange: ConnectlyEnv.RabbitEventExchange(),
+            routingKey: eventType,
+            mandatory: requireRouting,
+            basicProperties: properties,
+            body: Encoding.UTF8.GetBytes(jsonEnvelope),
+            cancellationToken: linked.Token);
+
+        // The broker confirms the publish even for an unroutable message; only basic.return
+        // reports that there was no queue. Without this check the outbox would mark the
+        // event as sent and the event would be lost for good.
+        if (requireRouting && _returned.TryRemove(messageId, out var reason))
+            throw new InvalidOperationException(
+                $"Event '{eventType}' was returned by the broker ({reason}): no queue is bound to this routing key.");
+    }
+
+    public void Dispose()
+    {
+        try { _channel?.Dispose(); } catch { }
+        try { _connection?.Dispose(); } catch { }
+    }
+}
