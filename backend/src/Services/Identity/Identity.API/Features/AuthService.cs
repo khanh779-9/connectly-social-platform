@@ -63,3 +63,64 @@ public class AuthService(
         if (await db.Users.AnyAsync(u => u.Email == email, ct))
             throw new InvalidOperationException("Account already exists.");
 
+        var user = new User
+        {
+            Email = email,
+            DisplayName = request.DisplayName.Trim(),
+            PasswordHash = PasswordHasher.Hash(request.Password),
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        db.Users.Add(user);
+        db.EnqueueEvent(EventTypes.Identity.UserRegistered, new UserRegisteredV1(user.Id, user.Email, user.DisplayName), Producer);
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("User {UserId} registered", user.Id);
+
+        var client = await ClientInfoFactory.FromAsync(http.HttpContext, ct);
+        var result = await IssueTokensAsync(user, client, request.RememberMe, ct);
+        await notifications.TryPushAsync(
+            user.Id,
+            WelcomeNotification,
+            "Welcome to Connectly! Add a photo, a short bio and your city so people can find you.",
+            ct: ct);
+        return result;
+    }
+
+    public async Task<AuthResult> LoginAsync(LoginRequest request, CancellationToken ct)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+        if (user is null || !PasswordHasher.Verify(request.Password, user.PasswordHash))
+            throw new UnauthorizedAccessException("Invalid credentials.");
+        if (user.Status != "active")
+            throw new UnauthorizedAccessException("Account is not active.");
+
+        var client = await ClientInfoFactory.FromAsync(http.HttpContext, ct);
+        var knownDevice = client.DeviceId is { Length: > 0 } deviceId
+            && await db.RefreshTokens.AnyAsync(t => t.UserId == user.Id && t.DeviceId == deviceId, ct);
+
+        var result = await IssueTokensAsync(user, client, request.RememberMe, ct);
+        if (!knownDevice)
+        {
+            var deviceLabel = client.DeviceLabel ?? "an unrecognised device";
+            var where = string.IsNullOrWhiteSpace(client.Location) ? string.Empty : $" · {client.Location}";
+            await notifications.TryPushAsync(
+                user.Id,
+                NewSignInNotification,
+                $"New sign-in from {deviceLabel}{where}",
+                deviceLabel: client.DeviceLabel,
+                ipAddress: client.IpAddress,
+                location: client.Location,
+                ct: ct);
+        }
+        return result;
+    }
+
+    public async Task<AuthResult> RefreshAsync(RefreshRequest request, CancellationToken ct)
+    {
+        var hash = HashToken(request.RefreshToken);
+        var stored = await db.RefreshTokens.Include(t => t.User).FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+        if (stored is null || stored.RevokedAt is not null || stored.ExpiresAt < DateTimeOffset.UtcNow)
+            throw new UnauthorizedAccessException("Invalid or expired refresh token.");
+        if (stored.User?.Status != "active")
+            throw new UnauthorizedAccessException("Account is not active.");
+
