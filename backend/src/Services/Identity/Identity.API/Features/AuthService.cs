@@ -124,3 +124,45 @@ public class AuthService(
         if (stored.User?.Status != "active")
             throw new UnauthorizedAccessException("Account is not active.");
 
+        stored.RevokedAt = DateTimeOffset.UtcNow;
+        var deviceId = http.HttpContext!.Request.Headers["X-Device-Id"].ToString();
+        var deviceLabel = stored.DeviceLabel;
+        var userAgent = stored.UserAgent;
+        var ipAddress = stored.IpAddress;
+        var location = stored.Location;
+        if (!string.IsNullOrEmpty(deviceId)) { /* update device session */ }
+        var ttlDays = request.RememberMe
+            ? ConnectlyEnv.GetInt("REMEMBER_REFRESH_TTL_DAYS", 90)
+            : ConnectlyEnv.LoadJwtOptions().RefreshTokenTtlDays;
+        var refreshToken = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64));
+        db.RefreshTokens.Add(new RefreshToken
+        {
+            UserId = stored.UserId,
+            TokenHash = HashToken(refreshToken),
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(ttlDays),
+            CreatedAt = DateTimeOffset.UtcNow,
+            LastUsedAt = DateTimeOffset.UtcNow,
+            DeviceId = deviceId,
+            DeviceLabel = deviceLabel,
+            UserAgent = userAgent,
+            IpAddress = ipAddress,
+            Location = location
+        });
+        await db.SaveChangesAsync(ct);
+
+        var (accessToken, _) = ConnectlyTokens.CreateAccessToken(stored.UserId, stored.User!.DisplayName, stored.User.Email);
+        return new AuthResult(
+            stored.UserId,
+            stored.User.DisplayName,
+            accessToken,
+            refreshToken,
+            ConnectlyEnv.LoadJwtOptions().AccessTokenTtlMinutes);
+    }
+
+    public async Task<MeDto> GetMeAsync(Guid userId, CancellationToken ct)
+    {
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new KeyNotFoundException("User not found.");
+        return new MeDto(user.Id, user.DisplayName, user.Email, user.Status);
+    }
+}
