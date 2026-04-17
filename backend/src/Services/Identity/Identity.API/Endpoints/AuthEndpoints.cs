@@ -36,3 +36,26 @@ public static class AuthEndpoints
             catch (UnauthorizedAccessException) { return Results.Unauthorized(); }
         });
 
+        group.MapPost("/auth/refresh", async ([FromBody] RefreshRequest request, AuthService auth, CancellationToken ct) =>
+        {
+            try
+            {
+                var result = await auth.RefreshAsync(request, ct);
+                return Results.Ok(result);
+            }
+            catch (UnauthorizedAccessException) { return Results.Unauthorized(); }
+        });
+
+        group.MapGet("/me", [Authorize] async (
+            [FromServices] ICurrentUser currentUser,
+            [FromServices] AuthService auth,
+            CancellationToken ct) =>
+        {
+            try { return Results.Ok(await auth.GetMeAsync(currentUser.RequireUserId(), ct)); }
+            catch (KeyNotFoundException) { return Results.NotFound(); }
+        });
+
+        return app;
+    }
+}
+
