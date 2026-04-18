@@ -26,3 +26,27 @@ public class SessionService(IdentityDbContext db)
             .ThenByDescending(t => t.CreatedAt)
             .ToListAsync(ct);
 
+        var hasDeviceId = !string.IsNullOrWhiteSpace(currentDeviceId);
+        return rows
+            .Select(t => new SessionDto(
+                t.Id,
+                t.DeviceLabel,
+                t.UserAgent,
+                t.IpAddress,
+                t.Location,
+                t.CreatedAt,
+                t.LastUsedAt,
+                hasDeviceId && t.DeviceId == currentDeviceId))
+            .ToList();
+    }
+
+    /// <summary>Revokes only tokens that belong to the caller. Returns how many were ended.</summary>
+    public async Task<int> RevokeAsync(Guid userId, IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return 0;
+
+        return await db.RefreshTokens
+            .Where(t => t.UserId == userId && t.RevokedAt == null && ids.Contains(t.Id))
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, DateTimeOffset.UtcNow), ct);
+    }
+}
