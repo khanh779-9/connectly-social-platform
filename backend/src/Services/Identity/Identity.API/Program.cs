@@ -27,3 +27,20 @@ builder.Services.AddHttpClient<NotificationClient>(client =>
     client.Timeout = BuildingBlocks.Env.ConnectlyEnv.InternalHttpTimeout();
 });
 
+var app = builder.Build();
+
+app.Services.MigrateOnStartup<IdentityDbContext>();
+
+app.UseConnectlyCommon();
+
+app.UseConnectlyHealth();
+app.MapOpenApi();
+app.MapAuthEndpoints();
+app.MapPreferencesEndpoints();
+app.MapSecurityEndpoints();
+
+app.Run();
+
+
+
+
