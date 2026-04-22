@@ -78,3 +78,97 @@ public class Comment
     public Post? Post { get; set; }
 }
 
+/// <summary>
+/// One immutable revision of a post's text: who changed it, from what, to what and when.
+/// The current text stays on <see cref="Post"/>; this table is the audit trail behind it.
+/// </summary>
+public class PostEdit
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid PostId { get; set; }
+    public Guid EditorUserId { get; set; }
+    public string? PreviousText { get; set; }
+    public string? NewText { get; set; }
+    public DateTimeOffset EditedAt { get; set; }
+}
+
+/// <summary>Revision history for a comment, same shape as <see cref="PostEdit"/>.</summary>
+public class CommentEdit
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CommentId { get; set; }
+    public Guid EditorUserId { get; set; }
+    public string? PreviousContent { get; set; }
+    public string? NewContent { get; set; }
+    public DateTimeOffset EditedAt { get; set; }
+}
+
+public class PostReaction
+{
+    public Guid PostId { get; set; }
+    public Guid UserId { get; set; }
+    public string ReactionType { get; set; } = "like";
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>
+/// Facebook-style fixed reaction set (chapter: Reaction & Emoji Interaction Engine — SINGLE_SET mode).
+/// Keys are stored lowercase; UI constants map them to emoji + labels.
+/// </summary>
+public static class ReactionSet
+{
+    public const string Like = "like";
+    public const string Love = "love";
+    public const string Care = "care";
+    public const string Haha = "haha";
+    public const string Wow = "wow";
+    public const string Sad = "sad";
+    public const string Angry = "angry";
+
+    public static readonly string[] All = [Like, Love, Care, Haha, Wow, Sad, Angry];
+
+    public static bool IsValid(string? type) =>
+        type is not null && All.Contains(type.Trim().ToLowerInvariant());
+
+    /// <summary>Turns a reaction sent by the client into one of the fixed values; unknown values become "like".</summary>
+    public static string Normalize(string? type)
+    {
+        var value = (type ?? string.Empty).Trim().ToLowerInvariant();
+        return IsValid(value) ? value : Like;
+    }
+}
+
+/// <summary>Reaction on a comment — a distinct target from the post reaction (composite PK: comment_id + user_id).</summary>
+public class CommentReaction
+{
+    public Guid CommentId { get; set; }
+    public Guid UserId { get; set; }
+    public string ReactionType { get; set; } = "like";
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>Record that a user shared a post (one row per share event; not idempotent by design).</summary>
+public class PostShare
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid PostId { get; set; }
+    public Guid UserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>Normalized hashtag extracted from post text (composite PK: post_id + tag).</summary>
+public class PostHashtag
+{
+    public Guid PostId { get; set; }
+    public string Tag { get; set; } = default!;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>Saved post (composite PK: post_id + user_id).</summary>
+public class PostBookmark
+{
+    public Guid PostId { get; set; }
+    public Guid UserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
