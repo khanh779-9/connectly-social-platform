@@ -364,3 +364,127 @@ public class SocialDbContext(DbContextOptions<SocialDbContext> options) : DbCont
             b.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
 
+        modelBuilder.Entity<PageAdmin>(b =>
+        {
+            b.ToTable("page_admins");
+            b.HasKey(x => new { x.PageId, x.UserId });
+            b.HasIndex(x => x.UserId);
+            b.Property(x => x.PageId).HasColumnName("page_id");
+            b.Property(x => x.UserId).HasColumnName("user_id");
+            b.Property(x => x.Role).HasColumnName("role");
+            b.Property(x => x.AddedAt).HasColumnName("added_at");
+        });
+
+        modelBuilder.Entity<Story>(b =>
+        {
+            b.ToTable("stories");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.AuthorUserId, x.CreatedAt });
+            b.HasIndex(x => new { x.ExpiresAt });
+            b.Property(x => x.Id).HasColumnName("id");
+            b.Property(x => x.AuthorUserId).HasColumnName("author_user_id");
+            b.Property(x => x.MediaAssetId).HasColumnName("media_asset_id");
+            b.Property(x => x.Caption).HasColumnName("caption").HasMaxLength(500);
+            b.Property(x => x.Visibility).HasColumnName("visibility");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+            b.Property(x => x.ExpiresAt).HasColumnName("expires_at");
+        });
+
+        modelBuilder.Entity<StoryView>(b =>
+        {
+            b.ToTable("story_views");
+            b.HasKey(x => new { x.StoryId, x.ViewerUserId });
+            b.HasIndex(x => x.ViewerUserId);
+            b.Property(x => x.StoryId).HasColumnName("story_id");
+            b.Property(x => x.ViewerUserId).HasColumnName("viewer_user_id");
+            b.Property(x => x.ViewedAt).HasColumnName("viewed_at");
+        });
+
+        modelBuilder.Entity<Highlight>(b =>
+        {
+            b.ToTable("highlights");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => x.OwnerUserId);
+            b.Property(x => x.Id).HasColumnName("id");
+            b.Property(x => x.OwnerUserId).HasColumnName("owner_user_id");
+            b.Property(x => x.Title).HasColumnName("title").HasMaxLength(60);
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<HighlightStory>(b =>
+        {
+            b.ToTable("highlight_stories");
+            b.HasKey(x => new { x.HighlightId, x.StoryId });
+            b.HasIndex(x => x.StoryId);
+            b.Property(x => x.HighlightId).HasColumnName("highlight_id");
+            b.Property(x => x.StoryId).HasColumnName("story_id");
+            b.Property(x => x.SortOrder).HasColumnName("sort_order");
+        });
+
+        modelBuilder.Entity<PostMention>(b =>
+        {
+            b.ToTable("post_mentions");
+            b.HasKey(x => new { x.PostId, x.UserId });
+            b.HasIndex(x => x.UserId);
+            b.Property(x => x.PostId).HasColumnName("post_id");
+            b.Property(x => x.UserId).HasColumnName("user_id");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+            b.HasOne<Post>().WithMany().HasForeignKey(x => x.PostId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CommentMention>(b =>
+        {
+            b.ToTable("comment_mentions");
+            b.HasKey(x => new { x.CommentId, x.UserId });
+            b.HasIndex(x => x.UserId);
+            b.Property(x => x.CommentId).HasColumnName("comment_id");
+            b.Property(x => x.UserId).HasColumnName("user_id");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+            b.HasOne<Comment>().WithMany().HasForeignKey(x => x.CommentId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ReelView>(b =>
+        {
+            b.ToTable("reel_views");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.PostId, x.ViewedAt });
+            b.HasIndex(x => new { x.ViewerUserId, x.ViewedAt });
+            b.Property(x => x.Id).HasColumnName("id");
+            b.Property(x => x.PostId).HasColumnName("post_id");
+            b.Property(x => x.ViewerUserId).HasColumnName("viewer_user_id");
+            b.Property(x => x.WatchedMs).HasColumnName("watched_ms");
+            b.Property(x => x.ViewedAt).HasColumnName("viewed_at");
+            b.HasOne<Post>().WithMany().HasForeignKey(x => x.PostId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Edit history: one row per revision, readable by anyone who can read the post.
+        modelBuilder.Entity<PostEdit>(b =>
+        {
+            b.ToTable("post_edits");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.PostId, x.EditedAt });
+            b.Property(x => x.Id).HasColumnName("id");
+            b.Property(x => x.PostId).HasColumnName("post_id");
+            b.Property(x => x.EditorUserId).HasColumnName("editor_user_id");
+            b.Property(x => x.PreviousText).HasColumnName("previous_text").HasMaxLength(5000);
+            b.Property(x => x.NewText).HasColumnName("new_text").HasMaxLength(5000);
+            b.Property(x => x.EditedAt).HasColumnName("edited_at");
+            b.HasOne<Post>().WithMany().HasForeignKey(x => x.PostId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CommentEdit>(b =>
+        {
+            b.ToTable("comment_edits");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.CommentId, x.EditedAt });
+            b.Property(x => x.Id).HasColumnName("id");
+            b.Property(x => x.CommentId).HasColumnName("comment_id");
+            b.Property(x => x.EditorUserId).HasColumnName("editor_user_id");
+            b.Property(x => x.PreviousContent).HasColumnName("previous_content").HasMaxLength(2000);
+            b.Property(x => x.NewContent).HasColumnName("new_content").HasMaxLength(2000);
+            b.Property(x => x.EditedAt).HasColumnName("edited_at");
+            b.HasOne<Comment>().WithMany().HasForeignKey(x => x.CommentId).OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+}
+
