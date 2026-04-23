@@ -60,3 +60,48 @@ public class Profile
     /// <summary>OnlyMe keeps the profile out of name/@handle search results.</summary>
     public ProfileAudience SearchableAudience { get; set; } = ProfileAudience.Everyone;
 
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public enum FriendshipStatus
+{
+    Pending = 0,
+    Accepted = 1,
+    Declined = 2,
+    Cancelled = 3
+}
+
+/// <summary>One row per user pair (UserLowId &lt; UserHighId).</summary>
+public class Friendship
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserLowId { get; set; }
+    public Guid UserHighId { get; set; }
+    public Guid RequestedByUserId { get; set; }
+    public FriendshipStatus Status { get; set; } = FriendshipStatus.Pending;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? RespondedAt { get; set; }
+}
+
+public class UserFollow
+{
+    public Guid FollowerId { get; set; }
+    public Guid FolloweeId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public class UserBlock
+{
+    public Guid BlockerId { get; set; }
+    public Guid BlockedUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public class UserMute
+{
+    public Guid MuterId { get; set; }
+    public Guid MutedUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
