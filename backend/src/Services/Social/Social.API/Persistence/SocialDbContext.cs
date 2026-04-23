@@ -202,3 +202,165 @@ public class SocialDbContext(DbContextOptions<SocialDbContext> options) : DbCont
             b.HasOne(c => c.Post).WithMany().HasForeignKey(c => c.PostId);
         });
 
+        modelBuilder.Entity<PostReaction>(b =>
+        {
+            b.ToTable("post_reactions");
+            b.HasKey(r => new { r.PostId, r.UserId });
+            b.HasIndex(r => new { r.PostId, r.ReactionType });
+            b.Property(r => r.PostId).HasColumnName("post_id");
+            b.Property(r => r.UserId).HasColumnName("user_id");
+            b.Property(r => r.ReactionType).HasColumnName("reaction_type");
+            b.Property(r => r.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<PostBookmark>(b =>
+        {
+            b.ToTable("post_bookmarks");
+            b.HasKey(x => new { x.PostId, x.UserId });
+            b.HasIndex(x => new { x.UserId, x.CreatedAt });
+            b.Property(x => x.PostId).HasColumnName("post_id");
+            b.Property(x => x.UserId).HasColumnName("user_id");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<CommentReaction>(b =>
+        {
+            b.ToTable("comment_reactions");
+            b.HasKey(x => new { x.CommentId, x.UserId });
+            b.HasIndex(x => new { x.CommentId, x.ReactionType });
+            b.Property(x => x.CommentId).HasColumnName("comment_id");
+            b.Property(x => x.UserId).HasColumnName("user_id");
+            b.Property(x => x.ReactionType).HasColumnName("reaction_type").HasMaxLength(32);
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<PostShare>(b =>
+        {
+            b.ToTable("post_shares");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.PostId, x.CreatedAt });
+            b.HasIndex(x => new { x.UserId, x.CreatedAt });
+            b.Property(x => x.Id).HasColumnName("id");
+            b.Property(x => x.PostId).HasColumnName("post_id");
+            b.Property(x => x.UserId).HasColumnName("user_id");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<PostHashtag>(b =>
+        {
+            b.ToTable("post_hashtags");
+            b.HasKey(x => new { x.PostId, x.Tag });
+            b.HasIndex(x => x.Tag).HasMethod("btree");
+            b.Property(x => x.PostId).HasColumnName("post_id");
+            b.Property(x => x.Tag).HasColumnName("tag").HasMaxLength(64);
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<Group>(b =>
+        {
+            b.ToTable("groups");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => x.CreatedByUserId);
+            b.HasIndex(x => new { x.Visibility, x.CreatedAt });
+            b.Property(x => x.Id).HasColumnName("id");
+            b.Property(x => x.Name).HasColumnName("name").HasMaxLength(120);
+            b.Property(x => x.Description).HasColumnName("description").HasMaxLength(2000);
+            b.Property(x => x.Visibility).HasColumnName("visibility");
+            b.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+            b.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<GroupMember>(b =>
+        {
+            b.ToTable("group_members");
+            b.HasKey(x => new { x.GroupId, x.UserId });
+            b.HasIndex(x => new { x.UserId, x.Status });
+            b.HasIndex(x => new { x.GroupId, x.Status });
+            b.Property(x => x.GroupId).HasColumnName("group_id");
+            b.Property(x => x.UserId).HasColumnName("user_id");
+            b.Property(x => x.Role).HasColumnName("role");
+            b.Property(x => x.Status).HasColumnName("status");
+            b.Property(x => x.JoinedAt).HasColumnName("joined_at");
+        });
+
+        modelBuilder.Entity<Event>(b =>
+        {
+            b.ToTable("events");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.StartsAt });
+            b.HasIndex(x => new { x.HostUserId, x.StartsAt });
+            b.HasIndex(x => new { x.GroupId, x.StartsAt });
+            b.Property(x => x.Id).HasColumnName("id");
+            b.Property(x => x.Title).HasColumnName("title").HasMaxLength(140);
+            b.Property(x => x.Description).HasColumnName("description").HasMaxLength(5000);
+            b.Property(x => x.LocationText).HasColumnName("location_text").HasMaxLength(240);
+            b.Property(x => x.OnlineUrl).HasColumnName("online_url").HasMaxLength(500);
+            b.Property(x => x.StartsAt).HasColumnName("starts_at");
+            b.Property(x => x.EndsAt).HasColumnName("ends_at");
+            b.Property(x => x.HostUserId).HasColumnName("host_user_id");
+            b.Property(x => x.GroupId).HasColumnName("group_id");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+            b.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<EventAttendee>(b =>
+        {
+            b.ToTable("event_attendees");
+            b.HasKey(x => new { x.EventId, x.UserId });
+            b.HasIndex(x => new { x.UserId, x.Rsvp });
+            b.Property(x => x.EventId).HasColumnName("event_id");
+            b.Property(x => x.UserId).HasColumnName("user_id");
+            b.Property(x => x.Rsvp).HasColumnName("rsvp");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<Poll>(b =>
+        {
+            b.ToTable("polls");
+            b.HasKey(x => x.PostId);
+            b.Property(x => x.PostId).HasColumnName("post_id");
+            b.Property(x => x.Question).HasColumnName("question").HasMaxLength(300);
+            b.Property(x => x.AllowMultiple).HasColumnName("allow_multiple");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<PollOption>(b =>
+        {
+            b.ToTable("poll_options");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.PostId, x.SortOrder });
+            b.Property(x => x.Id).HasColumnName("id");
+            b.Property(x => x.PostId).HasColumnName("post_id");
+            b.Property(x => x.Text).HasColumnName("text").HasMaxLength(140);
+            b.Property(x => x.SortOrder).HasColumnName("sort_order");
+        });
+
+        modelBuilder.Entity<PollVote>(b =>
+        {
+            b.ToTable("poll_votes");
+            b.HasKey(x => new { x.PostId, x.OptionId, x.UserId });
+            b.HasIndex(x => new { x.PostId, x.UserId });
+            b.Property(x => x.PostId).HasColumnName("post_id");
+            b.Property(x => x.OptionId).HasColumnName("option_id");
+            b.Property(x => x.UserId).HasColumnName("user_id");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<Page>(b =>
+        {
+            b.ToTable("pages");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => x.OwnerUserId);
+            b.HasIndex(x => new { x.Name });
+            b.Property(x => x.Id).HasColumnName("id");
+            b.Property(x => x.Name).HasColumnName("name").HasMaxLength(120);
+            b.Property(x => x.Description).HasColumnName("description").HasMaxLength(2000);
+            b.Property(x => x.Category).HasColumnName("category").HasMaxLength(80);
+            b.Property(x => x.AvatarObjectKey).HasColumnName("avatar_object_key");
+            b.Property(x => x.CoverObjectKey).HasColumnName("cover_object_key");
+            b.Property(x => x.OwnerUserId).HasColumnName("owner_user_id");
+            b.Property(x => x.CreatedAt).HasColumnName("created_at");
+            b.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
