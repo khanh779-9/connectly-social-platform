@@ -185,3 +185,193 @@ public class PostService(
         if (post.AuthorUserId != ViewerId) throw new UnauthorizedAccessException("Not your post.");
         if (post.Status == PostStatus.Deleted) throw new InvalidOperationException("Post deleted.");
 
+        var previousText = post.TextContent;
+        if (request.TextContent is not null) post.TextContent = request.TextContent;
+
+        // posts of a group keep the audience of their group — visibility is not editable by hand
+        if (request.Visibility is not null && post.GroupId is null) post.Visibility = request.Visibility.Value;
+
+        post.EditedAt = DateTimeOffset.UtcNow;
+        post.UpdatedAt = post.EditedAt.Value;
+
+        // only a real text change is a revision; flipping the audience is not
+        if (!string.Equals(previousText, post.TextContent, StringComparison.Ordinal))
+        {
+            db.PostEdits.Add(new PostEdit
+            {
+                PostId = post.Id,
+                EditorUserId = ViewerId,
+                PreviousText = previousText,
+                NewText = post.TextContent,
+                EditedAt = post.EditedAt.Value
+            });
+        }
+
+        await IndexHashtagsAsync(post.Id, post.TextContent, ct);
+
+        // only published posts notify their mentions (editing a draft stays silent)
+        await MentionIndexer.IndexPostMentionsAsync(db, post.Id, post.TextContent, post.AuthorUserId,
+            notify: post.Status == PostStatus.Published, ct);
+        await db.SaveChangesAsync(ct);
+
+        var dto = await mapper.ToDtoAsync(post, ct);
+        var enriched = await mapper.WithStatsAsync([dto], ct);
+        return enriched.First();
+    }
+
+    public async Task DeletePostAsync(Guid postId, CancellationToken ct)
+    {
+        var post = await db.Posts.Include(p => p.Media).SingleOrDefaultAsync(p => p.Id == postId, ct)
+            ?? throw new KeyNotFoundException("Post not found.");
+        if (post.AuthorUserId != ViewerId) throw new UnauthorizedAccessException("Not your post.");
+
+        post.Status = PostStatus.Deleted;
+        post.DeletedAt = DateTimeOffset.UtcNow;
+        db.EnqueueEvent(EventTypes.Social.PostDeleted, new PostDeletedV1(post.Id, post.AuthorUserId), EventProducer.Name);
+        await db.SaveChangesAsync(ct);
+
+        // The media files are removed later by the Hangfire reconciliation job.
+        // Removing them here would happen outside the Social DB transaction.
+    }
+
+    // ---------- Read ----------
+
+    public async Task<PostDto?> GetPostAsync(Guid postId, CancellationToken ct)
+    {
+        var post = await db.Posts.Include(p => p.Media).AsNoTracking().SingleOrDefaultAsync(p => p.Id == postId, ct);
+        if (post is null) return null; // hide existence
+
+        if (!await access.CanReadAsync(post, ct)) return null;
+
+        var dto = await mapper.ToDtoAsync(post, ct);
+        var enriched = await mapper.WithStatsAsync([dto], ct);
+        return enriched.FirstOrDefault();
+    }
+
+    /// <summary>Revision history of a post. Null when the viewer may not read the post.</summary>
+    public async Task<List<ContentEditDto>?> GetPostEditHistoryAsync(Guid postId, CancellationToken ct)
+    {
+        if (await GetPostAsync(postId, ct) is null) return null;
+
+        return await db.PostEdits.AsNoTracking()
+            .Where(e => e.PostId == postId)
+            .OrderByDescending(e => e.EditedAt)
+            .Select(e => new ContentEditDto(e.EditorUserId, e.PreviousText, e.NewText, e.EditedAt))
+            .ToListAsync(ct);
+    }
+
+    // ---------- Shares ----------
+
+    /// <summary>Records a share of a visible post and notifies the author.</summary>
+    public async Task SharePostAsync(Guid postId, CancellationToken ct)
+    {
+        var post = await db.Posts.AsNoTracking().SingleOrDefaultAsync(p => p.Id == postId, ct)
+            ?? throw new KeyNotFoundException("Post not found.");
+        if (post.Status != PostStatus.Published || !await access.CanViewAsync(post, ct))
+            throw new UnauthorizedAccessException("You cannot share this post.");
+
+        var me = ViewerId;
+        db.Shares.Add(new PostShare { PostId = postId, UserId = me, CreatedAt = DateTimeOffset.UtcNow });
+        db.EnqueueEvent(EventTypes.Social.PostShared, new PostSharedV1(postId, post.AuthorUserId, me), EventProducer.Name);
+        await db.SaveChangesAsync(ct);
+    }
+
+    // ---------- Bookmarks ----------
+
+    public async Task SaveBookmarkAsync(Guid postId, CancellationToken ct)
+    {
+        var post = await db.Posts.AsNoTracking().SingleOrDefaultAsync(p => p.Id == postId, ct)
+            ?? throw new KeyNotFoundException("Post not found.");
+        if (post.Status == PostStatus.Deleted) throw new InvalidOperationException("Post deleted.");
+        if (!await access.CanViewAsync(post, ct)) throw new UnauthorizedAccessException("You cannot save this post.");
+
+        var me = ViewerId;
+        if (await db.Bookmarks.FindAsync([postId, me]) is not null) return; // idempotent
+
+        db.Bookmarks.Add(new PostBookmark { PostId = postId, UserId = me, CreatedAt = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task RemoveBookmarkAsync(Guid postId, CancellationToken ct)
+    {
+        var bookmark = await db.Bookmarks.FindAsync([postId, ViewerId]);
+        if (bookmark is null) return;
+
+        db.Bookmarks.Remove(bookmark);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<CursorPageOf<PostDto>> ListBookmarksAsync(string? cursor, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 30);
+        var me = ViewerId;
+
+        var query = db.Bookmarks.AsNoTracking()
+            .Where(b => b.UserId == me)
+            .OrderByDescending(b => b.CreatedAt).ThenByDescending(b => b.PostId);
+
+        if (!string.IsNullOrEmpty(cursor))
+        {
+            var (time, id) = Cursor.Parse(cursor);
+            query = query.Where(b => b.CreatedAt < time || (b.CreatedAt == time && b.PostId.CompareTo(id) < 0))
+                .OrderByDescending(b => b.CreatedAt).ThenByDescending(b => b.PostId);
+        }
+
+        var rows = await query.Take(limit + 1).ToListAsync(ct);
+        var postIds = rows.Select(r => r.PostId).ToList();
+        var posts = await db.Posts.AsNoTracking().Include(p => p.Media)
+            .Where(p => postIds.Contains(p.Id) && p.Status == PostStatus.Published)
+            .ToListAsync(ct);
+        var byId = posts.ToDictionary(p => p.Id);
+
+        var raw = new List<PostDto>();
+        foreach (var row in rows.Take(limit))
+        {
+            if (!byId.TryGetValue(row.PostId, out var post)) continue;
+            if (!await access.CanViewAsync(post, ct)) continue;
+            raw.Add(await mapper.ToDtoAsync(post, ct));
+        }
+
+        var enriched = await mapper.WithStatsAsync(raw, ct);
+        var last = rows.Count > limit ? rows[limit - 1] : rows.LastOrDefault();
+        var next = last is null ? null : Cursor.Encode(last.CreatedAt, last.PostId);
+        return new CursorPageOf<PostDto>(enriched, next);
+    }
+
+    // ---------- Polls on creation ----------
+
+    /// <summary>Attaches a poll to a post (2–6 options, unique trimmed labels).</summary>
+    private void AddPoll(Guid postId, PollInput? input)
+    {
+        if (input is null) return;
+
+        var question = input.Question.Trim();
+        var options = input.Options
+            .Select(o => o.Trim())
+            .Where(o => o.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(6)
+            .ToList();
+
+        // a malformed poll is ignored, the post itself is still created
+        if (question.Length == 0 || options.Count < 2) return;
+
+        db.Polls.Add(new Poll
+        {
+            PostId = postId,
+            Question = question,
+            AllowMultiple = input.AllowMultiple,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+
+        for (var i = 0; i < options.Count; i++)
+            db.PollOptions.Add(new PollOption { PostId = postId, Text = options[i], SortOrder = i });
+    }
+
+    /// <summary>The event carries a short preview of the post, not the whole text.</summary>
+    private static PostPublishedV1 NewPostPublished(Post post)
+    {
+        var preview = post.TextContent?[..Math.Min(post.TextContent?.Length ?? 0, 200)];
+        return new PostPublishedV1(post.Id, post.AuthorUserId, post.Visibility.ToString(), preview);
+    }
+}
