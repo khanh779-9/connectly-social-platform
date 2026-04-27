@@ -35,3 +35,38 @@ public static class PostEndpoints
             catch (Exception ex) { return ex.ToProblem("post_state"); }
         });
 
+        group.MapPost("/posts/{postId:guid}/publish", async (Guid postId, [FromServices] PostService posts, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await posts.PublishPostAsync(postId, ct)); }
+            catch (Exception ex) { return ex.ToProblem("post_state"); }
+        });
+
+        // the revision history is readable by anyone who can read the post
+        group.MapGet("/posts/{postId:guid}/edits", async (Guid postId, [FromServices] PostService posts, CancellationToken ct) =>
+        {
+            var history = await posts.GetPostEditHistoryAsync(postId, ct);
+            return history is null ? Results.NotFound() : Results.Ok(history);
+        });
+
+        group.MapPost("/posts/{postId:guid}/share", async (Guid postId, [FromServices] PostService posts, CancellationToken ct) =>
+        {
+            try { await posts.SharePostAsync(postId, ct); return Results.NoContent(); }
+            catch (Exception ex) { return ex.ToProblem("share_state"); }
+        });
+
+        group.MapPut("/posts/{postId:guid}/bookmark", async (Guid postId, [FromServices] PostService posts, CancellationToken ct) =>
+        {
+            try { await posts.SaveBookmarkAsync(postId, ct); return Results.NoContent(); }
+            catch (Exception ex) { return ex.ToProblem("bookmark_state"); }
+        });
+
+        group.MapDelete("/posts/{postId:guid}/bookmark", async (Guid postId, [FromServices] PostService posts, CancellationToken ct) =>
+        {
+            try { await posts.RemoveBookmarkAsync(postId, ct); return Results.NoContent(); }
+            catch (Exception ex) { return ex.ToProblem("bookmark_state"); }
+        });
+
+        group.MapGet("/me/bookmarks", async (string? cursor, int limit, [FromServices] PostService posts, CancellationToken ct) =>
+            Results.Ok(await posts.ListBookmarksAsync(cursor, limit, ct)));
+    }
+}
