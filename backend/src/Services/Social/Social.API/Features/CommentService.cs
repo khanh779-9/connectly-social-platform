@@ -144,3 +144,156 @@ public class CommentService(
         comment.Status = "deleted";
         comment.UpdatedAt = now;
 
+        // the replies are marked through the change tracker so they are deleted in
+        // the same transaction as the comment itself
+        var replies = await db.Comments.Where(c => c.ParentCommentId == commentId && c.Status == "active")
+            .ToListAsync(ct);
+        foreach (var reply in replies)
+        {
+            reply.Status = "deleted";
+            reply.UpdatedAt = now;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<CursorPageOf<CommentDto>> ListCommentsAsync(Guid postId, string? cursor, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 50);
+        var me = ViewerId;
+
+        // a comment inherits the visibility of its post
+        var post = await db.Posts.AsNoTracking().SingleOrDefaultAsync(p => p.Id == postId, ct)
+            ?? throw new KeyNotFoundException("Post not found.");
+        if (!await access.CanViewAsync(post, ct))
+            throw new UnauthorizedAccessException("You cannot view this post.");
+
+        IQueryable<Comment> query = db.Comments.AsNoTracking()
+            .Where(c => c.PostId == postId && c.Status == "active")
+            .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id);
+
+        if (!string.IsNullOrEmpty(cursor))
+        {
+            var (time, id) = Cursor.Parse(cursor);
+            query = query.Where(c => c.CreatedAt > time || (c.CreatedAt == time && c.Id.CompareTo(id) > 0));
+        }
+
+        var items = await query.Take(limit + 1).ToListAsync(ct);
+
+        // two extra queries: the reaction counts and the reactions of the viewer (no N+1)
+        var ids = items.Select(c => c.Id).ToList();
+        var reactionCounts = await db.CommentReactions.AsNoTracking()
+            .Where(r => ids.Contains(r.CommentId))
+            .GroupBy(r => r.CommentId)
+            .Select(g => new { CommentId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.CommentId, x => x.Count, ct);
+        var myReactions = await db.CommentReactions.AsNoTracking()
+            .Where(r => ids.Contains(r.CommentId) && r.UserId == me)
+            .ToDictionaryAsync(r => r.CommentId, r => r.ReactionType, ct);
+
+        var page = items.Take(limit);
+
+        // the cursor points at the last row handed to the client, so the next page starts after it
+        var nextCursor = items.Count > limit
+            ? Cursor.Encode(items[limit - 1].CreatedAt, items[limit - 1].Id)
+            : null;
+
+        var mentionsByComment = await LoadMentionsAsync(page.Select(c => c.Id).ToList(), ct);
+
+        var dtos = page.Select(c => ToDto(c) with
+        {
+            ReactionCount = reactionCounts.GetValueOrDefault(c.Id),
+            ViewerReaction = myReactions.GetValueOrDefault(c.Id),
+            Mentions = mentionsByComment.GetValueOrDefault(c.Id, [])
+        }).ToList();
+
+        return new CursorPageOf<CommentDto>(dtos, nextCursor);
+    }
+
+    /// <summary>Revision history of a comment; people who can read the post can read it too.</summary>
+    public async Task<List<ContentEditDto>?> GetCommentEditHistoryAsync(Guid commentId, CancellationToken ct)
+    {
+        var comment = await db.Comments.AsNoTracking().SingleOrDefaultAsync(c => c.Id == commentId, ct);
+        if (comment is null) return null;
+
+        var post = await db.Posts.AsNoTracking().SingleOrDefaultAsync(p => p.Id == comment.PostId, ct);
+        if (post is null || !await access.CanReadAsync(post, ct)) return null;
+
+        return await db.CommentEdits.AsNoTracking()
+            .Where(e => e.CommentId == commentId)
+            .OrderByDescending(e => e.EditedAt)
+            .Select(e => new ContentEditDto(e.EditorUserId, e.PreviousContent, e.NewContent, e.EditedAt))
+            .ToListAsync(ct);
+    }
+
+    // ---------- Reactions on a comment ----------
+
+    public async Task SetCommentReactionAsync(Guid commentId, SetCommentReactionRequest request, CancellationToken ct)
+    {
+        var comment = await db.Comments.AsNoTracking()
+            .SingleOrDefaultAsync(c => c.Id == commentId && c.Status == "active", ct)
+            ?? throw new KeyNotFoundException("Comment not found.");
+
+        var post = await db.Posts.AsNoTracking().SingleOrDefaultAsync(p => p.Id == comment.PostId, ct);
+        if (post is null || post.Status != PostStatus.Published || !await access.CanViewAsync(post, ct))
+            throw new UnauthorizedAccessException("You cannot react to this comment.");
+
+        var me = ViewerId;
+        var type = ReactionSet.Normalize(request.ReactionType);
+
+        var existing = await db.CommentReactions.FindAsync([commentId, me]);
+        if (existing is not null)
+        {
+            existing.ReactionType = type;
+        }
+        else
+        {
+            db.CommentReactions.Add(new CommentReaction
+            {
+                CommentId = commentId,
+                UserId = me,
+                ReactionType = type,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task RemoveCommentReactionAsync(Guid commentId, CancellationToken ct)
+    {
+        var reaction = await db.CommentReactions.FindAsync([commentId, ViewerId]);
+        if (reaction is null) return;
+
+        db.CommentReactions.Remove(reaction);
+        await db.SaveChangesAsync(ct);
+    }
+
+    // ---------- Mentions of a page of comments ----------
+
+    /// <summary>The tagged users of a page of comments (one query, no N+1).</summary>
+    private async Task<Dictionary<Guid, List<MentionDto>>> LoadMentionsAsync(List<Guid> commentIds, CancellationToken ct)
+    {
+        if (commentIds.Count == 0) return [];
+
+        var mentionRows = await db.CommentMentions.AsNoTracking()
+            .Where(m => commentIds.Contains(m.CommentId))
+            .ToListAsync(ct);
+        if (mentionRows.Count == 0) return [];
+
+        var mentionedUserIds = mentionRows.Select(m => m.UserId).Distinct().ToList();
+        var mentionUsers = await db.Profiles.AsNoTracking()
+            .Where(p => p.Username != null && mentionedUserIds.Contains(p.UserId))
+            .Select(p => new { p.UserId, p.Username })
+            .ToListAsync(ct);
+        var usernameByUser = mentionUsers.ToDictionary(x => x.UserId, x => x.Username!);
+
+        return mentionRows
+            .GroupBy(m => m.CommentId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(m => new MentionDto(m.UserId, usernameByUser.GetValueOrDefault(m.UserId, "")))
+                    .Where(m => m.Username.Length > 0)
+                    .ToList());
+    }
+}
