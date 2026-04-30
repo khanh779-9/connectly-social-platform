@@ -157,3 +157,132 @@ public class FeedService(
     {
         limit = Math.Clamp(limit, 1, 30);
 
+        if (!await db.Pages.AsNoTracking().AnyAsync(p => p.Id == pageId, ct))
+            throw new KeyNotFoundException("Page not found.");
+
+        var query = db.Posts.AsNoTracking().Include(p => p.Media)
+            .Where(p => p.PageId == pageId && p.Status == PostStatus.Published)
+            .OrderByDescending(p => p.PublishedAt).ThenByDescending(p => p.Id);
+
+        if (!string.IsNullOrEmpty(cursor))
+        {
+            var (time, id) = Cursor.Parse(cursor);
+            query = query.Where(p => p.PublishedAt < time || (p.PublishedAt == time && p.Id.CompareTo(id) < 0))
+                .OrderByDescending(p => p.PublishedAt).ThenByDescending(p => p.Id);
+        }
+
+        var rows = await query.Take(limit + 1).ToListAsync(ct);
+        var page = rows.Take(limit);
+
+        var raw = new List<PostDto>();
+        foreach (var post in page) raw.Add(await mapper.ToDtoAsync(post, ct));
+
+        var enriched = await mapper.WithStatsAsync(raw, ct);
+        var next = rows.Count > limit
+            ? Cursor.Encode(rows[limit - 1].PublishedAt ?? rows[limit - 1].CreatedAt, rows[limit - 1].Id)
+            : null;
+        return new CursorPageOf<PostDto>(enriched, next);
+    }
+
+    /// <summary>Feed filtered by hashtag, scoped to the network of the viewer.</summary>
+    public async Task<CursorPageOf<PostDto>> GetHashtagFeedAsync(
+        string tag, string? cursor, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 30);
+
+        var normalized = tag.Trim().TrimStart('#').ToLowerInvariant();
+        if (normalized.Length is 0 or > 50) return new CursorPageOf<PostDto>([], null);
+
+        var me = ViewerId;
+        var friendIds = await db.Friendships.AsNoTracking()
+            .Where(f => f.Status == FriendshipStatus.Accepted && (f.UserLowId == me || f.UserHighId == me))
+            .Select(f => f.UserLowId == me ? f.UserHighId : f.UserLowId).ToListAsync(ct);
+        var followeeIds = await db.Follows.AsNoTracking()
+            .Where(f => f.FollowerId == me).Select(f => f.FolloweeId).ToListAsync(ct);
+        var authorIds = friendIds.Concat(followeeIds).Append(me).Distinct().ToList();
+
+        var query = db.PostHashtags.AsNoTracking()
+            .Where(h => h.Tag == normalized)
+            .Join(db.Posts.AsNoTracking().Include(p => p.Media)
+                    .Where(p => p.Status == PostStatus.Published && authorIds.Contains(p.AuthorUserId)),
+                h => h.PostId, p => p.Id, (h, p) => p);
+
+        if (!string.IsNullOrEmpty(cursor))
+        {
+            var (time, id) = Cursor.Parse(cursor);
+            query = query.Where(p => p.PublishedAt < time || (p.PublishedAt == time && p.Id.CompareTo(id) < 0));
+        }
+
+        var candidates = await query
+            .OrderByDescending(p => p.PublishedAt).ThenByDescending(p => p.Id)
+            .Take(limit * 2).ToListAsync(ct);
+
+        var visible = await FilterVisibleAsync(candidates, limit, ct);
+
+        var raw = new List<PostDto>();
+        foreach (var post in visible) raw.Add(await mapper.ToDtoAsync(post, ct));
+
+        var result = await mapper.WithStatsAsync(raw, ct);
+        var last = visible.LastOrDefault();
+
+        // the cursor carries PublishedAt because that is the column the query sorts on
+        var next = last is null ? null : Cursor.Encode(last.PublishedAt ?? last.CreatedAt, last.Id);
+        return new CursorPageOf<PostDto>(result, next);
+    }
+
+    // ---------- Search ----------
+
+    public async Task<List<PostDto>> SearchPostsAsync(string query, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 30);
+
+        var text = query.Trim();
+        if (text.Length < 2) return [];
+        var needle = text.ToLowerInvariant();
+
+        var posts = await db.Posts.AsNoTracking()
+            .Include(p => p.Media)
+            .Where(p => p.Status == PostStatus.Published && p.TextContent != null && p.TextContent.ToLower().Contains(needle))
+            .OrderByDescending(p => p.PublishedAt)
+            .Take(limit * 2)
+            .ToListAsync(ct);
+
+        var visible = await FilterVisibleAsync(posts, limit, ct);
+
+        var raw = new List<PostDto>();
+        foreach (var post in visible) raw.Add(await mapper.ToDtoAsync(post, ct));
+
+        return await mapper.WithStatsAsync(raw, ct);
+    }
+
+    /// <summary>Hashtags matching the term, most used first (server-side, over the tag index).</summary>
+    public async Task<List<string>> SearchHashtagsAsync(string query, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 20);
+
+        var needle = query.Trim().TrimStart('#').ToLowerInvariant();
+        if (needle.Length < 1) return [];
+
+        return await db.PostHashtags.AsNoTracking()
+            .Where(h => h.Tag.Contains(needle))
+            .GroupBy(h => h.Tag)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .Take(limit)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>Keeps the posts the viewer may see, until the list is full.</summary>
+    private async Task<List<Post>> FilterVisibleAsync(List<Post> candidates, int limit, CancellationToken ct)
+    {
+        var visible = new List<Post>();
+        foreach (var post in candidates)
+        {
+            if (!await access.CanViewAsync(post, ct)) continue;
+            visible.Add(post);
+            if (visible.Count >= limit) break;
+        }
+
+        return visible;
+    }
+}
