@@ -113,3 +113,97 @@ public class FriendService(
         return new IdResult(friendship.Id);
     }
 
+    public async Task<IdResult> CancelFriendRequestAsync(Guid requestId, CancellationToken ct)
+    {
+        var friendship = await db.Friendships.SingleOrDefaultAsync(f => f.Id == requestId, ct)
+            ?? throw new KeyNotFoundException("Friend request not found.");
+
+        var me = ViewerId;
+        if (friendship.RequestedByUserId != me)
+            throw new InvalidOperationException("Only the requester can cancel.");
+        if (friendship.Status != FriendshipStatus.Pending)
+            throw new InvalidOperationException("Friend request is not pending.");
+
+        friendship.Status = FriendshipStatus.Cancelled;
+        friendship.RespondedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        return new IdResult(friendship.Id);
+    }
+
+    public async Task<IdResult> UnfriendAsync(Guid otherUserId, CancellationToken ct)
+    {
+        var me = ViewerId;
+        var (low, high) = ProfileService.Order(me, otherUserId);
+
+        var friendship = await db.Friendships.FirstOrDefaultAsync(
+            f => f.UserLowId == low && f.UserHighId == high && f.Status == FriendshipStatus.Accepted, ct)
+            ?? throw new KeyNotFoundException("You are not friends with this user.");
+
+        friendship.Status = FriendshipStatus.Cancelled;
+        friendship.RespondedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        return new IdResult(friendship.Id);
+    }
+
+    public async Task<List<ProfileDto>> ListFriendsAsync(Guid userId, CancellationToken ct)
+    {
+        var audience = await profiles.FriendListAudienceOfAsync(userId, ct);
+        await profiles.EnsureCanSeeListAsync(userId, audience, ct);
+
+        var otherIds = await db.Friendships.AsNoTracking()
+            .Where(f => f.Status == FriendshipStatus.Accepted && (f.UserLowId == userId || f.UserHighId == userId))
+            .Select(f => f.UserLowId == userId ? f.UserHighId : f.UserLowId)
+            .ToListAsync(ct);
+
+        return await profiles.GetProfileDtosAsync(otherIds, ct);
+    }
+
+    public async Task<List<FriendRequestDto>> GetPendingInvitesForAsync(Guid userId, bool incoming, CancellationToken ct)
+    {
+        var query = db.Friendships.AsNoTracking()
+            .Where(f => f.Status == FriendshipStatus.Pending &&
+                        (incoming ? f.UserLowId == userId || f.UserHighId == userId : f.RequestedByUserId == userId));
+
+        var requests = incoming
+            ? await query.Where(f => f.RequestedByUserId != userId).ToListAsync(ct)
+            : await query.ToListAsync(ct);
+
+        var otherIds = requests.Select(f => OtherUserId(f, userId, incoming)).ToList();
+        var profileDtos = await profiles.GetProfileDtosAsync(otherIds, ct);
+        var byUserId = profileDtos.ToDictionary(p => p.UserId);
+
+        var result = new List<FriendRequestDto>();
+        foreach (var request in requests)
+        {
+            var otherId = OtherUserId(request, userId, incoming);
+            var profile = byUserId.GetValueOrDefault(otherId)
+                ?? new ProfileDto(otherId, "Unknown", null, null, null, null, null, null);
+
+            result.Add(new FriendRequestDto(
+                request.Id,
+                otherId,
+                request.Status.ToString().ToLowerInvariant(),
+                request.CreatedAt,
+                profile));
+        }
+        return result;
+    }
+
+    /// <summary>The other person of a friendship: the partner of a request, the friend of a list.</summary>
+    private static Guid OtherUserId(Friendship friendship, Guid userId, bool incoming)
+    {
+        if (incoming)
+            return friendship.UserLowId == userId ? friendship.UserHighId : friendship.UserLowId;
+
+        return friendship.UserLowId == friendship.RequestedByUserId ? friendship.UserHighId : friendship.UserLowId;
+    }
+}
+
+public sealed record FriendRequestResult(Guid FriendRequestId, Guid RequesterUserId, Guid TargetUserId, string Status);
+
+public sealed record IdResult(Guid Id);
+
+/// <summary>A pending friend invitation including the id needed to accept or decline it.</summary>
+public sealed record FriendRequestDto(Guid RequestId, Guid OtherUserId, string Status, DateTimeOffset CreatedAt, ProfileDto Profile);
