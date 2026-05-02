@@ -89,3 +89,92 @@ public class RelationshipService(
             (x.BlockerId == userId && x.BlockedUserId == me), ct);
         if (blocked) throw new InvalidOperationException("You cannot follow this user.");
 
+        if (await db.Follows.FindAsync([me, userId]) is not null) return; // idempotent
+
+        db.Follows.Add(new UserFollow { FollowerId = me, FolloweeId = userId, CreatedAt = DateTimeOffset.UtcNow });
+        db.EnqueueEvent(EventTypes.Social.Followed, new FollowedV1(me, userId), EventProducer.Name);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UnfollowAsync(Guid userId, CancellationToken ct)
+    {
+        var me = ViewerId;
+        var follow = await db.Follows.FindAsync([me, userId]);
+        if (follow is null) return; // idempotent
+
+        db.Follows.Remove(follow);
+        await db.SaveChangesAsync(ct);
+    }
+
+    // ---------- Block ----------
+
+    public async Task BlockAsync(Guid userId, CancellationToken ct)
+    {
+        var me = ViewerId;
+        if (userId == me) throw new ArgumentException("You cannot block yourself.");
+        if (await db.Blocks.FindAsync([me, userId]) is not null) return;
+
+        db.Blocks.Add(new UserBlock { BlockerId = me, BlockedUserId = userId, CreatedAt = DateTimeOffset.UtcNow });
+
+        // a block dissolves the friendship and the follows in both directions
+        var (low, high) = ProfileService.Order(me, userId);
+        var friendship = await db.Friendships.FirstOrDefaultAsync(f => f.UserLowId == low && f.UserHighId == high, ct);
+        if (friendship is not null) db.Friendships.Remove(friendship);
+
+        var follows = await db.Follows
+            .Where(f => (f.FollowerId == me && f.FolloweeId == userId) || (f.FollowerId == userId && f.FolloweeId == me))
+            .ToListAsync(ct);
+        db.Follows.RemoveRange(follows);
+
+        db.EnqueueEvent(EventTypes.Social.Blocked, new BlockedV1(me, userId), EventProducer.Name);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UnblockAsync(Guid userId, CancellationToken ct)
+    {
+        var me = ViewerId;
+        var block = await db.Blocks.FindAsync([me, userId]);
+        if (block is null) return;
+
+        db.Blocks.Remove(block);
+
+        // Without this event Chat keeps its blocked-pair projection and the
+        // conversation stays unusable long after the block was lifted.
+        db.EnqueueEvent(EventTypes.Social.Unblocked, new UnblockedV1(me, userId), EventProducer.Name);
+        await db.SaveChangesAsync(ct);
+    }
+
+    // ---------- Mute ----------
+
+    public async Task MuteAsync(Guid userId, CancellationToken ct)
+    {
+        var me = ViewerId;
+        if (userId == me) throw new ArgumentException("You cannot mute yourself.");
+        if (await db.Mutes.FindAsync([me, userId]) is not null) return;
+
+        db.Mutes.Add(new UserMute { MuterId = me, MutedUserId = userId, CreatedAt = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UnmuteAsync(Guid userId, CancellationToken ct)
+    {
+        var me = ViewerId;
+        var mute = await db.Mutes.FindAsync([me, userId]);
+        if (mute is null) return;
+
+        db.Mutes.Remove(mute);
+        await db.SaveChangesAsync(ct);
+    }
+}
+
+/// <summary>How the viewer relates to another user.</summary>
+public sealed record RelationshipDto(
+    bool IsFriend,
+    bool IsFollowing,
+    bool HasIncomingRequest,
+    bool HasOutgoingRequest,
+    bool IsBlocked,
+    bool IsMuted,
+    int FollowerCount,
+    int FollowingCount,
+    int FriendCount);
