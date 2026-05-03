@@ -42,3 +42,46 @@ public static class RelationshipEndpoints
             catch (Exception ex) { return ex.ToProblem("friendship_state"); }
         });
 
+        group.MapDelete("/friends/{userId:guid}", async (Guid userId, [FromServices] FriendService friends, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await friends.UnfriendAsync(userId, ct)); }
+            catch (Exception ex) { return ex.ToProblem("friendship_state"); }
+        });
+
+        group.MapPost("/users/{userId:guid}/follow", async (Guid userId, [FromServices] RelationshipService relations, CancellationToken ct) =>
+        {
+            try { await relations.FollowAsync(userId, ct); return Results.NoContent(); }
+            catch (Exception ex) { return ex.ToProblem("follow_blocked"); }
+        });
+
+        group.MapDelete("/users/{userId:guid}/follow", async (Guid userId, [FromServices] RelationshipService relations, CancellationToken ct) =>
+        {
+            await relations.UnfollowAsync(userId, ct);
+            return Results.NoContent();
+        });
+
+        group.MapPost("/users/{userId:guid}/block", async (Guid userId, [FromServices] RelationshipService relations, CancellationToken ct) =>
+        {
+            await relations.BlockAsync(userId, ct);
+            return Results.NoContent();
+        });
+
+        group.MapDelete("/users/{userId:guid}/block", async (Guid userId, [FromServices] RelationshipService relations, CancellationToken ct) =>
+        {
+            await relations.UnblockAsync(userId, ct);
+            return Results.NoContent();
+        });
+
+        group.MapPost("/users/{userId:guid}/mute", async (Guid userId, [FromServices] RelationshipService relations, CancellationToken ct) =>
+        {
+            await relations.MuteAsync(userId, ct);
+            return Results.NoContent();
+        });
+
+        group.MapDelete("/users/{userId:guid}/mute", async (Guid userId, [FromServices] RelationshipService relations, CancellationToken ct) =>
+        {
+            await relations.UnmuteAsync(userId, ct);
+            return Results.NoContent();
+        });
+    }
+}
