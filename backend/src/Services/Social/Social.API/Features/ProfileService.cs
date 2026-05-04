@@ -245,3 +245,164 @@ public class ProfileService(
         var normalized = UsernameRules.Normalize(username);
         if (normalized is null) return null;
 
+        var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(p => p.Username == normalized, ct);
+        return profile is null ? null : await ToDtoAsync(profile, ct);
+    }
+
+    /// <summary>
+    /// Autocomplete for the mention picker: profiles whose @handle starts with
+    /// the query (falls back to a display-name match).
+    /// </summary>
+    public async Task<List<ProfileDto>> SearchUsernamesAsync(string query, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 20);
+        var text = query.Trim().TrimStart('@').ToLowerInvariant();
+        if (text.Length == 0) return [];
+
+        var me = currentUser.RequireUserId();
+        var blocked = await BlockedUserIdsAsync(me, ct);
+
+        var profiles = await db.Profiles.AsNoTracking()
+            .Where(p => p.Username != null && p.UserId != me && !blocked.Contains(p.UserId)
+                && p.SearchableAudience != ProfileAudience.OnlyMe)
+            .Where(p => p.Username!.StartsWith(text)
+                        || p.DisplayName.ToLower().Contains(text))
+            .OrderBy(p => p.Username!.StartsWith(text) ? 0 : 1)
+            .ThenBy(p => p.Username)
+            .Take(limit)
+            .ToListAsync(ct);
+
+        var result = new List<ProfileDto>();
+        foreach (var profile in profiles) result.Add(await ToDtoAsync(profile, ct));
+        return result;
+    }
+
+    // ---------- Lists of profiles ----------
+
+    /// <summary>Throws 403 when the owner does not let this viewer open the list.</summary>
+    public async Task EnsureCanSeeListAsync(Guid ownerUserId, ProfileAudience audience, CancellationToken ct)
+    {
+        var relation = await RelationToAsync(ownerUserId, ct);
+        if (!CanSee(audience, relation))
+            throw new UnauthorizedAccessException("This user's list is not visible to you.");
+    }
+
+    public async Task<ProfileAudience> FriendListAudienceOfAsync(Guid userId, CancellationToken ct) =>
+        await db.Profiles.AsNoTracking()
+            .Where(p => p.UserId == userId)
+            .Select(p => p.FriendListAudience)
+            .SingleOrDefaultAsync(ct);
+
+    public async Task<ProfileAudience> FollowingAudienceOfAsync(Guid userId, CancellationToken ct) =>
+        await db.Profiles.AsNoTracking()
+            .Where(p => p.UserId == userId)
+            .Select(p => p.FollowingAudience)
+            .SingleOrDefaultAsync(ct);
+
+    public async Task<ProfileAudience> FollowersAudienceOfAsync(Guid userId, CancellationToken ct) =>
+        await db.Profiles.AsNoTracking()
+            .Where(p => p.UserId == userId)
+            .Select(p => p.FollowersAudience)
+            .SingleOrDefaultAsync(ct);
+
+    public async Task<List<ProfileDto>> GetProfileDtosAsync(IEnumerable<Guid> userIds, CancellationToken ct)
+    {
+        var ids = userIds.Distinct().ToList();
+        var profiles = await db.Profiles.AsNoTracking()
+            .Where(p => ids.Contains(p.UserId)).ToDictionaryAsync(p => p.UserId, p => p, ct);
+
+        var result = new List<ProfileDto>();
+        foreach (var id in ids)
+        {
+            var profile = profiles.GetValueOrDefault(id) ?? new Profile { UserId = id, DisplayName = "Unknown" };
+            result.Add(await ToDtoAsync(profile, ct));
+        }
+        return result;
+    }
+
+    /// <summary>The users that blocked the viewer, or that the viewer blocked.</summary>
+    public async Task<List<Guid>> BlockedUserIdsAsync(Guid userId, CancellationToken ct) =>
+        await db.Blocks.AsNoTracking()
+            .Where(b => b.BlockerId == userId || b.BlockedUserId == userId)
+            .Select(b => b.BlockerId == userId ? b.BlockedUserId : b.BlockerId)
+            .ToListAsync(ct);
+
+    // ---------- The relation of the viewer to a profile ----------
+
+    public async Task<Relation> RelationToAsync(Guid ownerUserId, CancellationToken ct)
+    {
+        var me = currentUser.RequireUserId();
+        if (ownerUserId == me) return Relation.Owner;
+        if (relationCache.TryGetValue(ownerUserId, out var cached)) return cached;
+
+        var (low, high) = Order(me, ownerUserId);
+        var friendship = await db.Friendships.AsNoTracking()
+            .SingleOrDefaultAsync(f => f.UserLowId == low && f.UserHighId == high, ct);
+
+        Relation relation;
+        if (friendship?.Status == FriendshipStatus.Accepted)
+        {
+            relation = Relation.Friend;
+        }
+        else
+        {
+            var myFriends = await FriendsOfAsync(me, ct);
+            var theirFriends = await FriendsOfAsync(ownerUserId, ct);
+            myFriends.IntersectWith(theirFriends);
+            relation = myFriends.Count > 0 ? Relation.FriendOfFriend : Relation.Stranger;
+        }
+
+        relationCache[ownerUserId] = relation;
+        return relation;
+    }
+
+    private async Task<HashSet<Guid>> FriendsOfAsync(Guid userId, CancellationToken ct)
+    {
+        var ids = await db.Friendships.AsNoTracking()
+            .Where(f => f.Status == FriendshipStatus.Accepted && (f.UserLowId == userId || f.UserHighId == userId))
+            .Select(f => f.UserLowId == userId ? f.UserHighId : f.UserLowId)
+            .ToListAsync(ct);
+        return ids.ToHashSet();
+    }
+
+    // ---------- Mapping to the DTO ----------
+
+    private async Task<ProfileDto> ToDtoAsync(Profile profile, CancellationToken ct)
+    {
+        var relation = await RelationToAsync(profile.UserId, ct);
+
+        return new ProfileDto(
+            profile.UserId,
+            profile.DisplayName,
+            profile.Username,
+            CanSee(profile.BioAudience, relation) ? profile.Bio : null,
+            CanSee(profile.AvatarAudience, relation) && profile.AvatarObjectKey is not null
+                ? await storage.GenerateDownloadUrlAsync(profile.AvatarObjectKey, ct: ct)
+                : null,
+            CanSee(profile.CoverAudience, relation) && profile.CoverObjectKey is not null
+                ? await storage.GenerateDownloadUrlAsync(profile.CoverObjectKey, ct: ct)
+                : null,
+            CanSee(profile.WebsiteAudience, relation) ? profile.Website : null,
+            CanSee(profile.LocationAudience, relation) ? profile.LocationText : null,
+            CanSee(profile.EmailAudience, relation) ? profile.ContactEmail : null,
+            CanSee(profile.BirthdayAudience, relation) ? profile.DateOfBirth : null,
+            CanSee(profile.PhoneAudience, relation) ? profile.PhoneNumber : null,
+            CanSee(profile.CityAudience, relation) ? profile.City : null,
+            CanSee(profile.HometownAudience, relation) ? profile.Hometown : null,
+            profile.CreatedAt);
+    }
+
+    // ---------- Names of the settings ----------
+
+    private static string AudienceName(ProfileAudience audience) => audience switch
+    {
+        ProfileAudience.Friends => "friends",
+        ProfileAudience.FriendsOfFriends => "friends_of_friends",
+        ProfileAudience.OnlyMe => "only_me",
+        _ => "everyone"
+    };
+
+    private static ProfileAudience? ParseAudience(string? value)
+    {
+        if (value is null) return null;
+
