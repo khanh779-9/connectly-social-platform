@@ -406,3 +406,141 @@ public class ProfileService(
     {
         if (value is null) return null;
 
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "everyone" => ProfileAudience.Everyone,
+            "friends" => ProfileAudience.Friends,
+            "friends_of_friends" => ProfileAudience.FriendsOfFriends,
+            "only_me" => ProfileAudience.OnlyMe,
+            _ => throw new ArgumentException("audience must be everyone, friends, friends_of_friends or only_me.")
+        };
+    }
+
+    private static string VisibilityName(PostVisibility visibility) => visibility switch
+    {
+        PostVisibility.Friends => "friends",
+        PostVisibility.OnlyMe => "only_me",
+        _ => "public"
+    };
+
+    private static PostVisibility? ParsePostVisibility(string? value)
+    {
+        if (value is null) return null;
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "public" => PostVisibility.Public,
+            "friends" => PostVisibility.Friends,
+            "only_me" => PostVisibility.OnlyMe,
+            _ => throw new ArgumentException("defaultPostVisibility must be public, friends or only_me.")
+        };
+    }
+
+    private static string FriendRequestPolicyName(FriendRequestPolicy policy) =>
+        policy == FriendRequestPolicy.FriendsOfFriends ? "friends_of_friends" : "everyone";
+
+    private static FriendRequestPolicy? ParseFriendRequestPolicy(string? value)
+    {
+        if (value is null) return null;
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "everyone" => FriendRequestPolicy.Everyone,
+            "friends_of_friends" => FriendRequestPolicy.FriendsOfFriends,
+            _ => throw new ArgumentException("friendRequestPolicy must be everyone or friends_of_friends.")
+        };
+    }
+
+    private static PrivacySettingsDto ToPrivacyDto(Profile profile) => new(
+        VisibilityName(profile.DefaultPostVisibility),
+        FriendRequestPolicyName(profile.FriendRequestPolicy),
+        AudienceName(profile.AvatarAudience),
+        AudienceName(profile.CoverAudience),
+        AudienceName(profile.BioAudience),
+        AudienceName(profile.WebsiteAudience),
+        AudienceName(profile.LocationAudience),
+        AudienceName(profile.EmailAudience),
+        AudienceName(profile.BirthdayAudience),
+        AudienceName(profile.PhoneAudience),
+        AudienceName(profile.CityAudience),
+        AudienceName(profile.HometownAudience),
+        AudienceName(profile.FriendListAudience),
+        AudienceName(profile.FollowingAudience),
+        AudienceName(profile.FollowersAudience),
+        AudienceName(profile.CommentAudience),
+        AudienceName(profile.SearchableAudience));
+}
+
+/// <summary>
+/// A profile as one viewer sees it: fields the viewer is not allowed to see arrive as null,
+/// so the UI never has to apply privacy rules itself.
+/// </summary>
+public sealed record ProfileDto(
+    Guid UserId,
+    string DisplayName,
+    string? Username,
+    string? Bio,
+    string? AvatarUrl,
+    string? CoverUrl,
+    string? Website,
+    string? LocationText,
+    string? ContactEmail = null,
+    DateOnly? DateOfBirth = null,
+    string? PhoneNumber = null,
+    string? City = null,
+    string? Hometown = null,
+    DateTimeOffset? JoinedAt = null);
+
+public sealed record UpdateProfileRequest(
+    string? DisplayName,
+    string? Username,
+    string? Bio,
+    string? Website,
+    string? LocationText,
+    string? ContactEmail = null,
+    string? DateOfBirth = null,
+    string? PhoneNumber = null,
+    string? City = null,
+    string? Hometown = null);
+
+/// <summary>Audience values crossed over the wire: everyone | friends | friends_of_friends | only_me.</summary>
+public sealed record PrivacySettingsDto(
+    string DefaultPostVisibility,
+    string FriendRequestPolicy,
+    string AvatarAudience,
+    string CoverAudience,
+    string BioAudience,
+    string WebsiteAudience,
+    string LocationAudience,
+    string EmailAudience,
+    string BirthdayAudience,
+    string PhoneAudience,
+    string CityAudience,
+    string HometownAudience,
+    string FriendListAudience,
+    string FollowingAudience,
+    string FollowersAudience,
+    string CommentAudience,
+    string SearchableAudience);
+
+/// <summary>Every property is optional so the settings page can save one switch at a time.</summary>
+public sealed record UpdatePrivacyRequest(
+    string? DefaultPostVisibility = null,
+    string? FriendRequestPolicy = null,
+    string? AvatarAudience = null,
+    string? CoverAudience = null,
+    string? BioAudience = null,
+    string? WebsiteAudience = null,
+    string? LocationAudience = null,
+    string? EmailAudience = null,
+    string? BirthdayAudience = null,
+    string? PhoneAudience = null,
+    string? CityAudience = null,
+    string? HometownAudience = null,
+    string? FriendListAudience = null,
+    string? FollowingAudience = null,
+    string? FollowersAudience = null,
+    string? CommentAudience = null,
+    string? SearchableAudience = null);
+
+public sealed record UpdateProfileMediaRequest(Guid MediaId);
