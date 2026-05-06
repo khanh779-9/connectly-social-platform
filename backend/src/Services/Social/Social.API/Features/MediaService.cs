@@ -60,3 +60,66 @@ public class MediaService(SocialDbContext db, ICurrentUser currentUser, IFileSto
         if (asset.Status != "pending-upload")
             throw new InvalidOperationException("This upload is not open anymore.");
 
+        // The storage client has to know the body length before it sends
+        // anything, so the stream is spooled to disk first: a 200 MB video must
+        // not sit in memory.
+        var spool = Path.Combine(Path.GetTempPath(), $"connectly-upload-{mediaId:N}{Path.GetExtension(asset.ObjectKey)}");
+        try
+        {
+            await using (var file = File.Create(spool))
+                await content.CopyToAsync(file, ct);
+
+            // the ticket fixes the size, so a body that does not match it is refused
+            var written = new FileInfo(spool).Length;
+            if (written > MaxSizeBytes || written > asset.SizeBytes)
+                throw new InvalidOperationException("The uploaded file is larger than the ticket allows.");
+
+            await using var stream = new FileStream(
+                spool, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
+            // the asset's content type is the validated one, not whatever the request claimed
+            await storage.PutObjectAsync(asset.ObjectKey, stream, asset.ContentType, ct);
+        }
+        finally
+        {
+            try { File.Delete(spool); } catch { /* a leftover temp file is harmless */ }
+        }
+    }
+
+    public async Task<string> CompleteUploadAsync(Guid mediaId, CancellationToken ct)
+    {
+        var asset = await db.MediaAssets.SingleOrDefaultAsync(m => m.Id == mediaId && m.OwnerUserId == currentUser.RequireUserId(), ct)
+            ?? throw new KeyNotFoundException("Media asset not found.");
+        if (asset.Status != "ready")
+        {
+            // the object has to be in the bucket before the asset is marked ready,
+            // otherwise a ticket that was never used would publish a broken image
+            var stored = await storage.GetObjectInfoAsync(asset.ObjectKey, ct);
+            if (stored is null)
+                throw new InvalidOperationException("The file was not uploaded yet.");
+            if (stored.SizeBytes > MaxSizeBytes)
+                throw new InvalidOperationException("The uploaded file is too large.");
+
+            asset.Status = "ready";
+            asset.SizeBytes = stored.SizeBytes;
+            await db.SaveChangesAsync(ct);
+        }
+        return await storage.GenerateDownloadUrlAsync(asset.ObjectKey, ct: ct);
+    }
+
+    /// <summary>Object key keeps a real extension derived from the upload's MIME type.</summary>
+    private static string BuildObjectKey(Guid userId, string kind, string contentType)
+    {
+        var ext = StoraLayout.ExtensionForContentType(contentType);
+        return kind switch
+        {
+            "avatar" => StoraLayout.PersonObjectKey(userId, MediaKind.PersonAvatar, $"avatar{ext}"),
+            "cover" => StoraLayout.PersonObjectKey(userId, MediaKind.PersonCover, $"cover{ext}"),
+            "images" => StoraLayout.PersonObjectKey(userId, MediaKind.PersonImage, $"image{ext}"),
+            "videos" => StoraLayout.PersonObjectKey(userId, MediaKind.PersonVideo, $"video{ext}"),
+            "stories" => StoraLayout.PersonObjectKey(userId, MediaKind.PersonStory, $"story{ext}"),
+            _ => StoraLayout.PostObjectKey($"post{ext}")
+        };
+    }
+}
+
+
