@@ -47,3 +47,58 @@ public class Group
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+/// <summary>Membership + join-request rows live here (status Pending = join request).</summary>
+public class GroupMember
+{
+    public Guid GroupId { get; set; }
+    public Guid UserId { get; set; }
+    public GroupMemberRole Role { get; set; } = GroupMemberRole.Member;
+    public GroupMemberStatus Status { get; set; } = GroupMemberStatus.Active;
+    public DateTimeOffset JoinedAt { get; set; }
+}
+
+public enum GroupMemberRole
+{
+    Owner = 0,
+    Admin = 1,
+    Moderator = 2,
+    Member = 3
+}
+
+public enum GroupMemberStatus
+{
+    Active = 0,
+    Pending = 1
+}
+
+public class Event
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Title { get; set; } = default!;
+    public string? Description { get; set; }
+    public string? LocationText { get; set; }
+    public string? OnlineUrl { get; set; }
+    public DateTimeOffset StartsAt { get; set; }
+    public DateTimeOffset? EndsAt { get; set; }
+    public Guid HostUserId { get; set; }
+    /// <summary>Set when the event is hosted by a group; otherwise a personal event.</summary>
+    public Guid? GroupId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public class EventAttendee
+{
+    public Guid EventId { get; set; }
+    public Guid UserId { get; set; }
+    public RsvpStatus Rsvp { get; set; } = RsvpStatus.Going;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>Facebook RSVP set: Interested / Going / Not going.</summary>
+public enum RsvpStatus
+{
+    Going = 0,
+    Interested = 1,
+    NotGoing = 2
+}
