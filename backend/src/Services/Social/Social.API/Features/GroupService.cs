@@ -197,3 +197,161 @@ public class GroupService(
             .Select(p => p.Id).Contains(c.PostId))
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, "deleted").SetProperty(c => c.UpdatedAt, now), ct);
 
+        var eventIds = await db.Events.Where(e => e.GroupId == groupId).Select(e => e.Id).ToListAsync(ct);
+        if (eventIds.Count > 0)
+            await db.EventAttendees.Where(a => eventIds.Contains(a.EventId)).ExecuteDeleteAsync(ct);
+        await db.Events.Where(e => e.GroupId == groupId).ExecuteDeleteAsync(ct);
+        await db.GroupMembers.Where(m => m.GroupId == groupId).ExecuteDeleteAsync(ct);
+        db.Groups.Remove(group);
+        await db.SaveChangesAsync(ct);
+    }
+
+    // ---------- Membership ----------
+    /// <summary>Public groups admit instantly; private groups create a pending join request (notify owner).</summary>
+    public async Task<GroupDto> JoinGroupAsync(Guid groupId, CancellationToken ct)
+    {
+        var group = await db.Groups.AsNoTracking().SingleOrDefaultAsync(g => g.Id == groupId, ct)
+            ?? throw new KeyNotFoundException("Group not found.");
+        var existing = await db.GroupMembers.FindAsync([groupId, ViewerId]);
+        if (existing is { Status: GroupMemberStatus.Active })
+            return await WithViewerAsync(ToDto(group), ct); // idempotent
+        if (existing is { Status: GroupMemberStatus.Pending })
+            throw new InvalidOperationException("Join request already sent.");
+
+        if (group.Visibility == GroupVisibility.Public)
+        {
+            UpsertMember(groupId, ViewerId, GroupMemberRole.Member, GroupMemberStatus.Active);
+            db.EnqueueEvent(EventTypes.Social.GroupMemberJoined,
+                new GroupMemberJoinedV1(group.Id, group.Name, ViewerId, group.CreatedByUserId), Producer);
+        }
+        else
+        {
+            UpsertMember(groupId, ViewerId, GroupMemberRole.Member, GroupMemberStatus.Pending);
+            db.EnqueueEvent(EventTypes.Social.GroupJoinRequested,
+                new GroupJoinRequestedV1(group.Id, group.Name, ViewerId, group.CreatedByUserId), Producer);
+        }
+        await db.SaveChangesAsync(ct);
+        return await WithViewerAsync(ToDto(group), ct);
+    }
+
+    public async Task LeaveGroupAsync(Guid groupId, CancellationToken ct)
+    {
+        var membership = await db.GroupMembers.FindAsync([groupId, ViewerId]);
+        if (membership is null) return; // idempotent
+        if (membership.Role == GroupMemberRole.Owner)
+            throw new InvalidOperationException("Transfer or delete the group before leaving.");
+        db.GroupMembers.Remove(membership);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<GroupDto> ApproveMemberAsync(Guid groupId, Guid userId, CancellationToken ct)
+    {
+        await RequireModeratorAsync(groupId, ct);
+        var membership = await db.GroupMembers.FindAsync([groupId, userId])
+            ?? throw new KeyNotFoundException("Membership not found.");
+        if (membership.Status != GroupMemberStatus.Pending)
+            throw new InvalidOperationException("This member is not pending.");
+        membership.Status = GroupMemberStatus.Active;
+        membership.JoinedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        var group = await db.Groups.AsNoTracking().SingleAsync(g => g.Id == groupId, ct);
+        return await WithViewerAsync(ToDto(group), ct);
+    }
+
+    public async Task DeclineMemberAsync(Guid groupId, Guid userId, CancellationToken ct)
+    {
+        await RequireModeratorAsync(groupId, ct);
+        var membership = await db.GroupMembers.FindAsync([groupId, userId])
+            ?? throw new KeyNotFoundException("Membership not found.");
+        if (membership.Status != GroupMemberStatus.Pending)
+            throw new InvalidOperationException("This member is not pending.");
+        db.GroupMembers.Remove(membership);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task RemoveMemberAsync(Guid groupId, Guid userId, CancellationToken ct)
+    {
+        await RequireModeratorAsync(groupId, ct);
+        var membership = await db.GroupMembers.FindAsync([groupId, userId])
+            ?? throw new KeyNotFoundException("Membership not found.");
+        if (membership.Role == GroupMemberRole.Owner) throw new InvalidOperationException("The owner cannot be removed.");
+        db.GroupMembers.Remove(membership);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<CursorPageOf<GroupMemberDto>> ListMembersAsync(
+        Guid groupId, string? status, string? cursor, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        var group = await db.Groups.AsNoTracking().SingleOrDefaultAsync(g => g.Id == groupId, ct)
+            ?? throw new KeyNotFoundException("Group not found.");
+        // pending lists are admin-only; active rosters are open for public groups
+        if (group.Visibility == GroupVisibility.Private && !await IsMemberAsync(groupId, ViewerId, ct))
+            throw new UnauthorizedAccessException("Only members can view this roster.");
+
+        var filter = status switch
+        {
+            "pending" => GroupMemberStatus.Pending,
+            _ => GroupMemberStatus.Active,
+        };
+        // join requests are admin-only
+        if (filter == GroupMemberStatus.Pending) await RequireModeratorAsync(groupId, ct);
+        // keyset pagination needs the sort order to match the cursor tuple
+        IQueryable<GroupMember> query = db.GroupMembers.AsNoTracking()
+            .Where(m => m.GroupId == groupId && m.Status == filter)
+            .OrderBy(m => m.JoinedAt).ThenBy(m => m.UserId);
+        if (!string.IsNullOrEmpty(cursor))
+        {
+            var (time, id) = Cursor.Parse(cursor);
+            query = query.Where(m => m.JoinedAt > time || (m.JoinedAt == time && m.UserId.CompareTo(id) > 0));
+        }
+
+        var rows = await query.Take(limit + 1).ToListAsync(ct);
+        var page = rows.Take(limit);
+        // the cursor points at the last row handed to the client, so the next page starts after it
+        var nextCursor = rows.Count > limit ? Cursor.Encode(rows[limit - 1].JoinedAt, rows[limit - 1].UserId) : null;
+        var members = page.Select(m => new GroupMemberDto(
+            m.UserId,
+            m.Role.ToString().ToLowerInvariant(),
+            m.Status.ToString().ToLowerInvariant(),
+            m.JoinedAt)).ToList();
+
+        return new CursorPageOf<GroupMemberDto>(members, nextCursor);
+    }
+
+    /// <summary>True when the viewer has an active membership or anything higher than member.</summary>
+    public async Task<bool> IsMemberAsync(Guid groupId, Guid userId, CancellationToken ct) =>
+        await db.GroupMembers.AsNoTracking()
+            .AnyAsync(m => m.GroupId == groupId && m.UserId == userId && m.Status == GroupMemberStatus.Active, ct);
+
+    public async Task<bool> IsModeratorAsync(Guid groupId, Guid userId, CancellationToken ct) =>
+        await db.GroupMembers.AsNoTracking().AnyAsync(m =>
+            m.GroupId == groupId && m.UserId == userId && m.Status == GroupMemberStatus.Active &&
+            (m.Role == GroupMemberRole.Owner || m.Role == GroupMemberRole.Admin || m.Role == GroupMemberRole.Moderator), ct);
+
+    private async Task RequireModeratorAsync(Guid groupId, CancellationToken ct)
+    {
+        if (!await IsModeratorAsync(groupId, ViewerId, ct))
+            throw new UnauthorizedAccessException("Only group admins can do this.");
+    }
+
+    private void UpsertMember(Guid groupId, Guid userId, GroupMemberRole role, GroupMemberStatus status)
+    {
+        var membership = db.GroupMembers.Local.FirstOrDefault(m => m.GroupId == groupId && m.UserId == userId);
+        if (membership is not null)
+        {
+            membership.Status = status;
+            membership.Role = role;
+            membership.JoinedAt = DateTimeOffset.UtcNow;
+            return;
+        }
+        db.GroupMembers.Add(new GroupMember
+        {
+            GroupId = groupId,
+            UserId = userId,
+            Role = role,
+            Status = status,
+            JoinedAt = DateTimeOffset.UtcNow
+        });
+    }
+}
