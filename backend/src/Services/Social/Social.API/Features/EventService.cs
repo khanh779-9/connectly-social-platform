@@ -177,3 +177,118 @@ public class EventService(
             ?? throw new KeyNotFoundException("Event not found.");
         if (evt.HostUserId != ViewerId) throw new UnauthorizedAccessException("Only the host can update this event.");
 
+        if (request.Title is not null)
+        {
+            if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 140)
+                throw new ArgumentException("Event title is empty or too long.");
+            evt.Title = request.Title.Trim();
+        }
+        if (request.Description is not null) evt.Description = request.Description.Trim();
+        if (request.LocationText is not null) evt.LocationText = request.LocationText.Trim();
+        if (request.OnlineUrl is not null) evt.OnlineUrl = request.OnlineUrl.Trim();
+        if (request.StartsAt is { } starts)
+        {
+            // only future events enforce the "starts in the future" rule (already-started events may be corrected)
+            if (starts < DateTimeOffset.UtcNow.AddMinutes(-5) && evt.StartsAt > DateTimeOffset.UtcNow)
+                throw new ArgumentException("Event must start in the future.");
+            evt.StartsAt = starts;
+        }
+        if (request.EndsAt is { } ends) evt.EndsAt = ends;
+        evt.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return await WithStatsAsync(evt, ct);
+    }
+
+    public async Task DeleteEventAsync(Guid eventId, CancellationToken ct)
+    {
+        var evt = await db.Events.SingleOrDefaultAsync(e => e.Id == eventId, ct)
+            ?? throw new KeyNotFoundException("Event not found.");
+        if (evt.HostUserId != ViewerId) throw new UnauthorizedAccessException("Only the host can delete this event.");
+        await db.EventAttendees.Where(a => a.EventId == eventId).ExecuteDeleteAsync(ct);
+        db.Events.Remove(evt);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<SetRsvpRequest> SetRsvpAsync(Guid eventId, SetRsvpRequest request, CancellationToken ct)
+    {
+        var evt = await db.Events.AsNoTracking().SingleOrDefaultAsync(e => e.Id == eventId, ct)
+            ?? throw new KeyNotFoundException("Event not found.");
+        // visible RSVP: host events, personal events, and group events for members only
+        var allowed = evt.HostUserId == ViewerId || evt.GroupId == null ||
+                      await groups.IsMemberAsync(evt.GroupId.Value, ViewerId, ct);
+        if (!allowed) throw new UnauthorizedAccessException("You cannot RSVP to this event.");
+
+        if (!Enum.TryParse<RsvpStatus>(request.Rsvp, ignoreCase: true, out var rsvp))
+            throw new ArgumentException("Unknown RSVP.");
+
+        var existing = await db.EventAttendees.FindAsync([eventId, ViewerId]);
+        if (rsvp == RsvpStatus.NotGoing)
+        {
+            if (existing is not null)
+                db.EventAttendees.Remove(existing);
+        }
+        else if (existing is not null)
+        {
+            if (existing.Rsvp == rsvp)
+            {
+                return new SetRsvpRequest(rsvp.ToString().ToLowerInvariant());
+            }
+            existing.Rsvp = rsvp;
+            existing.CreatedAt = DateTimeOffset.UtcNow;
+        }
+        else
+        {
+            db.EventAttendees.Add(new EventAttendee
+            {
+                EventId = eventId,
+                UserId = ViewerId,
+                Rsvp = rsvp,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        }
+        await db.SaveChangesAsync(ct);
+        return new SetRsvpRequest(rsvp.ToString().ToLowerInvariant());
+    }
+
+    public async Task<CursorPageOf<EventAttendeeDto>> ListAttendeesAsync(
+        Guid eventId, string? rsvp, string? cursor, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        var evt = await db.Events.AsNoTracking().SingleOrDefaultAsync(e => e.Id == eventId, ct)
+            ?? throw new KeyNotFoundException("Event not found.");
+        await EnsureEventVisibleAsync(evt, ct);
+
+        var query = db.EventAttendees.AsNoTracking().Where(a => a.EventId == eventId);
+        if (Enum.TryParse<RsvpStatus>(rsvp, ignoreCase: true, out var status))
+            query = query.Where(a => a.Rsvp == status);
+        query = query.OrderBy(a => a.CreatedAt).ThenBy(a => a.UserId);
+        if (!string.IsNullOrEmpty(cursor))
+        {
+            var (time, id) = Cursor.Parse(cursor);
+            query = query.Where(a => a.CreatedAt > time || (a.CreatedAt == time && a.UserId.CompareTo(id) > 0));
+        }
+
+        var rows = await query.Take(limit + 1).ToListAsync(ct);
+        var page = rows.Take(limit);
+        var nextCursor = rows.Count > limit ? Cursor.Encode(rows[limit - 1].CreatedAt, rows[limit - 1].UserId) : null;
+        return new CursorPageOf<EventAttendeeDto>(
+            page.Select(a => new EventAttendeeDto(a.UserId, a.Rsvp.ToString().ToLowerInvariant(), a.CreatedAt)).ToList(),
+            nextCursor);
+    }
+
+    private async Task<EventDto> WithStatsAsync(Event evt, CancellationToken ct)
+    {
+        var counts = await db.EventAttendees.AsNoTracking()
+            .Where(a => a.EventId == evt.Id)
+            .GroupBy(a => a.Rsvp)
+            .Select(g => new { Rsvp = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        var viewer = await db.EventAttendees.AsNoTracking()
+            .SingleOrDefaultAsync(a => a.EventId == evt.Id && a.UserId == ViewerId, ct);
+        return ToDto(
+            evt,
+            counts.FirstOrDefault(c => c.Rsvp == RsvpStatus.Going)?.Count ?? 0,
+            counts.FirstOrDefault(c => c.Rsvp == RsvpStatus.Interested)?.Count ?? 0,
+            viewer?.Rsvp.ToString().ToLowerInvariant());
+    }
+}
