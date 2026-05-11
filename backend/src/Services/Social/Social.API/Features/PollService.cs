@@ -38,3 +38,30 @@ public class PollService(
         if (!poll.AllowMultiple && validOptions.Count > 1)
             throw new ArgumentException("This poll accepts a single choice.");
 
+        var me = ViewerId;
+        var now = DateTimeOffset.UtcNow;
+
+        // the previous votes are replaced through the change tracker: a bulk delete
+        // would commit on its own, outside the transaction of the new votes
+        var previousVotes = await db.PollVotes
+            .Where(v => v.PostId == postId && v.UserId == me).ToListAsync(ct);
+        var wanted = validOptions.ToHashSet();
+        foreach (var vote in previousVotes.Where(v => !wanted.Contains(v.OptionId)))
+            db.PollVotes.Remove(vote);
+
+        var alreadyVoted = previousVotes.Select(v => v.OptionId).ToHashSet();
+        foreach (var optionId in validOptions.Where(o => !alreadyVoted.Contains(o)))
+            db.PollVotes.Add(new PollVote { PostId = postId, OptionId = optionId, UserId = me, CreatedAt = now });
+
+        if (validOptions.Count > 0)
+        {
+            db.EnqueueEvent(EventTypes.Social.PollVoted,
+                new PollVotedV1(postId, post.AuthorUserId, me, validOptions.Count), EventProducer.Name);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        var polls = await mapper.LoadPollsAsync([postId], ct);
+        return polls[postId];
+    }
+}
