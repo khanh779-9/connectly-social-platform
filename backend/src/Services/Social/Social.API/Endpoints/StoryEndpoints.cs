@@ -50,3 +50,41 @@ public static class StoryEndpoints
             catch (Exception ex) { return ex.ToProblem("story_state"); }
         });
 
+        // ---------- Highlights ----------
+        group.MapPost("/highlights", async ([FromBody] CreateHighlightRequest request, [FromServices] StoryService stories, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await stories.CreateHighlightAsync(request, ct)); }
+            catch (Exception ex) { return ex.ToProblem("highlight_state"); }
+        });
+
+        group.MapGet("/highlights/mine", async ([FromServices] StoryService stories, CancellationToken ct) =>
+            Results.Ok(await stories.ListMyHighlightsAsync(ct)));
+
+        group.MapGet("/highlights/{ownerUserId:guid}", async (Guid ownerUserId, [FromServices] StoryService stories, CancellationToken ct) =>
+            Results.Ok(await stories.ListHighlightsAsync(ownerUserId, ct)));
+
+        group.MapGet("/highlights/{highlightId:guid}/stories", async (Guid highlightId, [FromServices] StoryService stories, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await stories.GetHighlightStoriesAsync(highlightId, ct)); }
+            catch (Exception ex) { return ex.ToProblem("highlight_state"); }
+        });
+
+        group.MapPost("/highlights/{highlightId:guid}/stories/{storyId:guid}", async (Guid highlightId, Guid storyId, [FromServices] StoryService stories, CancellationToken ct) =>
+        {
+            try { await stories.AddStoryToHighlightAsync(highlightId, storyId, ct); return Results.NoContent(); }
+            catch (Exception ex) { return ex.ToProblem("highlight_state"); }
+        });
+
+        group.MapDelete("/highlights/{highlightId:guid}/stories/{storyId:guid}", async (Guid highlightId, Guid storyId, [FromServices] StoryService stories, CancellationToken ct) =>
+        {
+            try { await stories.RemoveStoryFromHighlightAsync(highlightId, storyId, ct); return Results.NoContent(); }
+            catch (Exception ex) { return ex.ToProblem("highlight_state"); }
+        });
+
+        group.MapDelete("/highlights/{highlightId:guid}", async (Guid highlightId, [FromServices] StoryService stories, CancellationToken ct) =>
+        {
+            try { await stories.DeleteHighlightAsync(highlightId, ct); return Results.NoContent(); }
+            catch (Exception ex) { return ex.ToProblem("highlight_state"); }
+        });
+    }
+}
