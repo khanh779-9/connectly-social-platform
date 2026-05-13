@@ -257,3 +257,214 @@ public class StoryService(
         if (rows.Count == 0) return [];
         var ids = rows.Select(h => h.Id).ToList();
 
+        // stories of each highlight, in order
+        var entries = await db.HighlightStories.AsNoTracking()
+            .Where(h => ids.Contains(h.HighlightId))
+            .OrderBy(h => h.HighlightId).ThenBy(h => h.SortOrder)
+            .Join(db.Stories.AsNoTracking(), h => h.StoryId, s => s.Id, (h, s) => new { h.HighlightId, s })
+            .ToListAsync(ct);
+
+        // a highlight of another user only exposes the stories the viewer may see
+        var visibleEntries = new List<(Guid HighlightId, Story Story)>();
+        foreach (var entry in entries)
+        {
+            if (await CanSeeAsync(entry.s, ct)) visibleEntries.Add((entry.HighlightId, entry.s));
+        }
+
+        var counts = visibleEntries
+            .GroupBy(e => e.HighlightId)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var firstMedia = visibleEntries
+            .GroupBy(e => e.HighlightId)
+            .ToDictionary(g => g.Key, g => g.First().Story.MediaAssetId);
+        var assets = await db.MediaAssets.AsNoTracking()
+            .Where(m => firstMedia.Values.Contains(m.Id))
+            .ToDictionaryAsync(m => m.Id, ct);
+
+        var result = new List<HighlightDto>();
+        foreach (var highlight in rows)
+        {
+            string? cover = null;
+            if (firstMedia.TryGetValue(highlight.Id, out var mediaId) && assets.TryGetValue(mediaId, out var asset))
+                cover = await storage.GenerateDownloadUrlAsync(asset.ObjectKey, ct: ct);
+            result.Add(ToHighlightDto(highlight) with
+            {
+                CoverUrl = cover,
+                StoryCount = counts.GetValueOrDefault(highlight.Id)
+            });
+        }
+        return result;
+    }
+
+    private static HighlightDto ToHighlightDto(Highlight highlight) => new(
+        highlight.Id,
+        highlight.OwnerUserId,
+        highlight.Title,
+        highlight.CreatedAt);
+
+    /// <summary>Archives a story into a highlight (the story leaves the 24h rail and becomes permanent).</summary>
+    public async Task AddStoryToHighlightAsync(Guid highlightId, Guid storyId, CancellationToken ct)
+    {
+        var highlight = await db.Highlights.AsNoTracking().SingleOrDefaultAsync(h => h.Id == highlightId, ct)
+            ?? throw new KeyNotFoundException("Highlight not found.");
+        if (highlight.OwnerUserId != ViewerId) throw new UnauthorizedAccessException("Not your highlight.");
+
+        var story = await db.Stories.SingleOrDefaultAsync(s => s.Id == storyId, ct)
+            ?? throw new KeyNotFoundException("Story not found.");
+        if (story.AuthorUserId != ViewerId) throw new UnauthorizedAccessException("Only your own stories can be archived.");
+
+        var count = await db.HighlightStories.CountAsync(h => h.HighlightId == highlightId, ct);
+        if (!await db.HighlightStories.AnyAsync(h => h.HighlightId == highlightId && h.StoryId == storyId, ct))
+            db.HighlightStories.Add(new HighlightStory { HighlightId = highlightId, StoryId = storyId, SortOrder = count });
+        story.ExpiresAt = null; // archived: no longer shown in the story rail
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task RemoveStoryFromHighlightAsync(Guid highlightId, Guid storyId, CancellationToken ct)
+    {
+        var highlight = await db.Highlights.AsNoTracking().SingleOrDefaultAsync(h => h.Id == highlightId, ct)
+            ?? throw new KeyNotFoundException("Highlight not found.");
+        if (highlight.OwnerUserId != ViewerId) throw new UnauthorizedAccessException("Not your highlight.");
+        await db.HighlightStories.Where(h => h.HighlightId == highlightId && h.StoryId == storyId)
+            .ExecuteDeleteAsync(ct);
+        await RestoreExpiryAsync(storyId, ct);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// A story that no longer belongs to any highlight goes back to the 24h rail
+    /// when it has not expired yet (archived stories carry a null expiry).
+    /// </summary>
+    private async Task RestoreExpiryAsync(Guid storyId, CancellationToken ct)
+    {
+        var stillArchived = await db.HighlightStories.AsNoTracking()
+            .AnyAsync(h => h.StoryId == storyId, ct);
+        if (stillArchived) return;
+
+        var story = await db.Stories.SingleOrDefaultAsync(s => s.Id == storyId, ct);
+        if (story is null || story.ExpiresAt is not null) return;
+
+        var expiry = story.CreatedAt.Add(Lifetime);
+        story.ExpiresAt = expiry > DateTimeOffset.UtcNow ? expiry : null;
+    }
+
+    public async Task DeleteHighlightAsync(Guid highlightId, CancellationToken ct)
+    {
+        var highlight = await db.Highlights.SingleOrDefaultAsync(h => h.Id == highlightId, ct)
+            ?? throw new KeyNotFoundException("Highlight not found.");
+        if (highlight.OwnerUserId != ViewerId) throw new UnauthorizedAccessException("Not your highlight.");
+
+        var storyIds = await db.HighlightStories.AsNoTracking()
+            .Where(h => h.HighlightId == highlightId)
+            .Select(h => h.StoryId)
+            .ToListAsync(ct);
+        await db.HighlightStories.Where(h => h.HighlightId == highlightId).ExecuteDeleteAsync(ct);
+        db.Highlights.Remove(highlight);
+        await db.SaveChangesAsync(ct);
+
+        foreach (var storyId in storyIds) await RestoreExpiryAsync(storyId, ct);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Stories archived in a highlight (ordered), with their media URLs.</summary>
+    public async Task<List<StoryDto>> GetHighlightStoriesAsync(Guid highlightId, CancellationToken ct)
+    {
+        var highlight = await db.Highlights.AsNoTracking().SingleOrDefaultAsync(h => h.Id == highlightId, ct)
+            ?? throw new KeyNotFoundException("Highlight not found.");
+        var ownerId = highlight.OwnerUserId;
+
+        var rows = await db.HighlightStories.AsNoTracking()
+            .Where(h => h.HighlightId == highlightId)
+            .OrderBy(h => h.SortOrder)
+            .Join(db.Stories.AsNoTracking(), h => h.StoryId, s => s.Id, (h, s) => s)
+            .ToListAsync(ct);
+        if (rows.Count == 0) return [];
+
+        // highlights of other users only expose the stories the viewer may see
+        var visible = new List<Story>();
+        foreach (var story in rows)
+        {
+            if (await CanSeeAsync(story, ct)) visible.Add(story);
+        }
+        if (visible.Count == 0) return [];
+        rows = visible;
+
+        var media = await db.MediaAssets.AsNoTracking()
+            .Where(m => rows.Select(s => s.MediaAssetId).Contains(m.Id))
+            .ToDictionaryAsync(m => m.Id, ct);
+        var counts = await db.StoryViews.AsNoTracking()
+            .Where(v => rows.Select(s => s.Id).Contains(v.StoryId))
+            .GroupBy(v => v.StoryId)
+            .Select(g => new { StoryId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.StoryId, x => x.Count, ct);
+        var mine = await db.StoryViews.AsNoTracking()
+            .Where(v => v.ViewerUserId == ViewerId && rows.Select(s => s.Id).Contains(v.StoryId))
+            .Select(v => v.StoryId)
+            .ToListAsync(ct);
+
+        var result = new List<StoryDto>();
+        foreach (var story in rows)
+        {
+            if (!media.TryGetValue(story.MediaAssetId, out var asset)) continue;
+            var url = await storage.GenerateDownloadUrlAsync(asset.ObjectKey, ct: ct);
+            result.Add(new StoryDto(
+                story.Id,
+                story.AuthorUserId,
+                url,
+                asset.ContentType,
+                story.Caption,
+                story.CreatedAt,
+                story.ExpiresAt,
+                counts.GetValueOrDefault(story.Id),
+                mine.Contains(story.Id),
+                story.Visibility.ToString()));
+        }
+        return result;
+    }
+
+    // ---------- helpers ----------
+    private async Task<StoryDto> ToDtoAsync(Story story, CancellationToken ct)
+    {
+        var asset = await db.MediaAssets.AsNoTracking().SingleAsync(m => m.Id == story.MediaAssetId, ct);
+        var url = await storage.GenerateDownloadUrlAsync(asset.ObjectKey, ct: ct);
+        var viewCount = await db.StoryViews.AsNoTracking().CountAsync(v => v.StoryId == story.Id, ct);
+        var viewerViewed = await db.StoryViews.AsNoTracking()
+            .AnyAsync(v => v.StoryId == story.Id && v.ViewerUserId == ViewerId, ct);
+        return new StoryDto(
+            story.Id,
+            story.AuthorUserId,
+            url,
+            asset.ContentType,
+            story.Caption,
+            story.CreatedAt,
+            story.ExpiresAt,
+            viewCount,
+            viewerViewed,
+            story.Visibility.ToString());
+    }
+
+    /// <summary>Stories expire after 24h; visibility follows friends / public / only-me.</summary>
+    private async Task EnsureVisibleAsync(Story story, CancellationToken ct)
+    {
+        if (story.ExpiresAt is { } expires && expires <= DateTimeOffset.UtcNow)
+            throw new KeyNotFoundException("Story expired.");
+        if (!await CanSeeAsync(story, ct))
+            throw new UnauthorizedAccessException("You cannot see this story.");
+    }
+
+    /// <summary>Visibility check without the expiry rule (archived stories live forever inside highlights).</summary>
+    private async Task<bool> CanSeeAsync(Story story, CancellationToken ct)
+    {
+        if (story.AuthorUserId == ViewerId) return true;
+        if (story.Visibility == PostVisibility.OnlyMe) return false;
+        if (story.Visibility == PostVisibility.Friends)
+        {
+            return await db.Friendships.AsNoTracking().AnyAsync(f =>
+                f.Status == FriendshipStatus.Accepted &&
+                ((f.UserLowId == ViewerId && f.UserHighId == story.AuthorUserId) ||
+                 (f.UserHighId == ViewerId && f.UserLowId == story.AuthorUserId)), ct);
+        }
+        return true;
+    }
+
+}
