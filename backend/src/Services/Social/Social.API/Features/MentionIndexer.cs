@@ -61,3 +61,37 @@ public static class MentionIndexer
         var existing = await db.CommentMentions.Where(m => m.CommentId == commentId).ToListAsync(ct);
         var previously = existing.Select(m => m.UserId).ToList();
 
+        var resolved = await ResolveAsync(db, usernames, ct);
+
+        var wanted = resolved.Select(m => m.UserId).ToHashSet();
+        foreach (var row in existing.Where(m => !wanted.Contains(m.UserId)))
+            db.CommentMentions.Remove(row);
+
+        var present = existing.Select(m => m.UserId).ToHashSet();
+        var now = DateTimeOffset.UtcNow;
+        foreach (var mention in resolved.Where(m => !present.Contains(m.UserId)))
+            db.CommentMentions.Add(new CommentMention { CommentId = commentId, UserId = mention.UserId, CreatedAt = now });
+
+        var preview = content?[..Math.Min(content?.Length ?? 0, 120)];
+        foreach (var mention in resolved.Where(m => !previously.Contains(m.UserId) && m.UserId != authorUserId))
+            db.EnqueueEvent(EventTypes.Social.UserMentioned,
+                new UserMentionedV1(mention.UserId, authorUserId, postId, commentId, preview), Producer);
+
+        return resolved;
+    }
+
+    /// <summary>Maps the @handles found in the text to real profiles.</summary>
+    private static async Task<List<MentionDto>> ResolveAsync(
+        SocialDbContext db, List<string> usernames, CancellationToken ct)
+    {
+        if (usernames.Count == 0) return [];
+        var profiles = await db.Profiles.AsNoTracking()
+            .Where(p => p.Username != null && usernames.Contains(p.Username))
+            .ToListAsync(ct);
+        return profiles
+            .Where(p => p.Username is not null)
+            .Select(p => new MentionDto(p.UserId, p.Username!))
+            .OrderBy(m => usernames.IndexOf(m.Username))
+            .ToList();
+    }
+}
