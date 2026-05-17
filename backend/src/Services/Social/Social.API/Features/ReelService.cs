@@ -209,3 +209,154 @@ public class ReelService(
         return new CursorPageOf<ReelDto>(await WithStatsAsync(raw, ct), next);
     }
 
+    // ---------- Views ----------
+    /// <summary>
+    /// Records a playback session. The view is only counted when the video was
+    /// watched long enough; watch time is always stored so the creator tools
+    /// can compute average watch time and completion rate.
+    /// </summary>
+    public async Task<ReelDto?> RecordViewAsync(Guid reelId, RecordReelViewRequest request, CancellationToken ct)
+    {
+        var post = await db.Posts.AsNoTracking().Include(p => p.Media)
+            .SingleOrDefaultAsync(p => p.Id == reelId && p.IsReel, ct)
+            ?? throw new KeyNotFoundException("Reel not found.");
+        if (post.Status != PostStatus.Published || !await CanViewAsync(post, ct))
+            throw new UnauthorizedAccessException("You cannot watch this reel.");
+
+        var me = ViewerId;
+        var watched = Math.Clamp(request.WatchedMs, 0, 10 * 60 * 1000);
+
+        db.ReelViews.Add(new ReelView
+        {
+            PostId = reelId,
+            ViewerUserId = me,
+            WatchedMs = watched,
+            ViewedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync(ct);
+
+        var dto = await ToDtoAsync(post, ct);
+        return (await WithStatsAsync([dto], ct)).FirstOrDefault();
+    }
+
+    // ---------- Delete ----------
+    public async Task DeleteReelAsync(Guid reelId, CancellationToken ct)
+    {
+        var post = await db.Posts.Include(p => p.Media).SingleOrDefaultAsync(p => p.Id == reelId && p.IsReel, ct)
+            ?? throw new KeyNotFoundException("Reel not found.");
+        if (post.AuthorUserId != ViewerId) throw new UnauthorizedAccessException("Not your reel.");
+
+        post.Status = PostStatus.Deleted;
+        post.DeletedAt = DateTimeOffset.UtcNow;
+        db.EnqueueEvent(EventTypes.Social.PostDeleted, new PostDeletedV1(post.Id, post.AuthorUserId), Producer);
+        await db.SaveChangesAsync(ct);
+    }
+
+    // ---------- helpers ----------
+    private async Task<bool> CanViewAsync(Post post, CancellationToken ct)
+    {
+        var me = ViewerId;
+        if (post.AuthorUserId == me) return true;
+        if (post.Status != PostStatus.Published) return false;
+
+        var blocked = await db.Blocks.AsNoTracking()
+            .AnyAsync(b => (b.BlockerId == me && b.BlockedUserId == post.AuthorUserId)
+                           || (b.BlockerId == post.AuthorUserId && b.BlockedUserId == me), ct);
+        if (blocked) return false;
+
+        return post.Visibility switch
+        {
+            PostVisibility.Public => true,
+            PostVisibility.Friends => await db.Friendships.AsNoTracking().AnyAsync(f =>
+                f.Status == FriendshipStatus.Accepted
+                && ((f.UserLowId == me && f.UserHighId == post.AuthorUserId)
+                    || (f.UserHighId == me && f.UserLowId == post.AuthorUserId)), ct),
+            PostVisibility.OnlyMe => false,
+            _ => false
+        };
+    }
+
+    private async Task<ReelDto> ToDtoAsync(Post post, CancellationToken ct)
+    {
+        var media = post.Media.OrderBy(x => x.SortOrder).FirstOrDefault();
+        var url = media is null ? string.Empty : await storage.GenerateDownloadUrlAsync(media.ObjectKey, ct: ct);
+        return new ReelDto(
+            post.Id,
+            post.AuthorUserId,
+            post.TextContent,
+            post.Visibility.ToString(),
+            post.CreatedAt,
+            url,
+            media?.ContentType ?? "video/mp4");
+    }
+
+    /// <summary>Adds reactions, comments, shares, bookmarks, views and mentions.</summary>
+    private async Task<List<ReelDto>> WithStatsAsync(List<ReelDto> dtos, CancellationToken ct)
+    {
+        if (dtos.Count == 0) return dtos;
+        var ids = dtos.Select(d => d.Id).ToList();
+        var me = ViewerId;
+
+        var reactionCounts = await db.PostReactions.AsNoTracking()
+            .Where(r => ids.Contains(r.PostId))
+            .GroupBy(r => r.PostId)
+            .Select(g => new { PostId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.PostId, x => x.Count, ct);
+
+        var commentCounts = await db.Comments.AsNoTracking()
+            .Where(c => ids.Contains(c.PostId) && c.Status == "active")
+            .GroupBy(c => c.PostId)
+            .Select(g => new { PostId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.PostId, x => x.Count, ct);
+
+        var shareCounts = await db.Shares.AsNoTracking()
+            .Where(s => ids.Contains(s.PostId))
+            .GroupBy(s => s.PostId)
+            .Select(g => new { PostId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.PostId, x => x.Count, ct);
+
+        var myReactions = await db.PostReactions.AsNoTracking()
+            .Where(r => ids.Contains(r.PostId) && r.UserId == me)
+            .ToDictionaryAsync(r => r.PostId, r => r.ReactionType, ct);
+
+        var bookmarked = await db.Bookmarks.AsNoTracking()
+            .Where(b => ids.Contains(b.PostId) && b.UserId == me)
+            .Select(b => b.PostId)
+            .ToListAsync(ct);
+
+        // only qualified views (watched long enough) count as a view
+        var viewCounts = await db.ReelViews.AsNoTracking()
+            .Where(v => ids.Contains(v.PostId) && v.WatchedMs >= QualifiedViewMs)
+            .GroupBy(v => v.PostId)
+            .Select(g => new { PostId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.PostId, x => x.Count, ct);
+
+        var mentionRows = await db.PostMentions.AsNoTracking()
+            .Where(m => ids.Contains(m.PostId))
+            .ToListAsync(ct);
+        var mentionedUserIds = mentionRows.Select(m => m.UserId).Distinct().ToList();
+        var mentionUsers = await db.Profiles.AsNoTracking()
+            .Where(p => p.Username != null && mentionedUserIds.Contains(p.UserId))
+            .Select(p => new { p.UserId, p.Username })
+            .ToListAsync(ct);
+        var usernameByUser = mentionUsers.ToDictionary(x => x.UserId, x => x.Username!);
+        var mentionsByPost = mentionRows
+            .GroupBy(m => m.PostId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(m => new MentionDto(m.UserId, usernameByUser.GetValueOrDefault(m.UserId, "")))
+                    .Where(m => m.Username.Length > 0)
+                    .ToList());
+
+        return dtos.Select(d => d with
+        {
+            ReactionCount = reactionCounts.GetValueOrDefault(d.Id),
+            CommentCount = commentCounts.GetValueOrDefault(d.Id),
+            ShareCount = shareCounts.GetValueOrDefault(d.Id),
+            ViewerReaction = myReactions.GetValueOrDefault(d.Id),
+            ViewerBookmarked = bookmarked.Contains(d.Id),
+            ViewCount = viewCounts.GetValueOrDefault(d.Id),
+            Mentions = mentionsByPost.GetValueOrDefault(d.Id, [])
+        }).ToList();
+    }
+}
