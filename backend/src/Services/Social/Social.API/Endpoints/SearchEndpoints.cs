@@ -1,0 +1,25 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Social.Features;
+
+namespace Social.Endpoints;
+
+/// <summary>The search page: one call returns every kind of result.</summary>
+public static class SearchEndpoints
+{
+    public static void Map(IEndpointRouteBuilder group)
+    {
+        group.MapGet("/search", async (
+            string? q,
+            int limit,
+            [FromServices] ProfileService profile,
+            [FromServices] FeedService feed,
+            [FromServices] GroupService groups,
+            [FromServices] PageService pages,
+            [FromServices] EventService events,
+            CancellationToken ct) =>
+        {
+            var query = (q ?? string.Empty).Trim();
+            if (query.Length < 2) return Results.Ok(new SearchResultDto([], [], [], [], [], []));
+
