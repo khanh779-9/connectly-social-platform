@@ -48,3 +48,46 @@ builder.Services.AddConnectlyMessaging<SocialDbContext>(
     expectsConsumer: type => type is not (EventTypes.Social.PostPublished or EventTypes.Social.PostDeleted));
 builder.Services.AddConnectlyEventConsumer<SocialDbContext, UserRegisteredConsumer>();
 
+// Hangfire (background jobs / reconciliation)
+if (BuildingBlocks.Env.ConnectlyEnv.GetBool("HANGFIRE_ENABLED", true))
+{
+    builder.Services.AddHangfire(config =>
+        config.SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+              .UseSimpleAssemblyNameTypeSerializer()
+              .UseRecommendedSerializerSettings()
+              .UsePostgreSqlStorage(options =>
+                  options.UseNpgsqlConnection(BuildingBlocks.Env.ConnectlyEnv.PostgresConnectionString("social")), new PostgreSqlStorageOptions { SchemaName = "hangfire" }));
+    builder.Services.AddHangfireServer();
+
+    // Retry policy comes from the environment, so an attribute (which only accepts
+    // compile-time constants) cannot carry it.
+    Hangfire.GlobalJobFilters.Filters.Add(new Hangfire.AutomaticRetryAttribute
+    {
+        Attempts = BuildingBlocks.Env.ConnectlyEnv.HangfireRetryAttempts(),
+        DelaysInSeconds = BuildingBlocks.Env.ConnectlyEnv.HangfireRetryDelays(),
+    });
+}
+
+var app = builder.Build();
+
+app.Services.MigrateOnStartup<SocialDbContext>();
+
+app.UseConnectlyCommon();
+
+if (BuildingBlocks.Env.ConnectlyEnv.GetBool("HANGFIRE_ENABLED", true))
+{
+    app.UseHangfireDashboard("/hangfire");
+    RecurringJob.AddOrUpdate<MediaReconciliationJob>("media-reconciliation",
+        job => job.MarkOrphanedMediaAssetsAsync(),
+        BuildingBlocks.Env.ConnectlyEnv.HangfireMediaReconciliationCron());
+}
+
+app.UseConnectlyHealth();
+app.MapOpenApi();
+app.MapSocialEndpoints();
+
+app.Run();
+
+
+
+
