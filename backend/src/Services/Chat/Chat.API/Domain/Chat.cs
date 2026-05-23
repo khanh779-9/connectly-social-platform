@@ -45,3 +45,63 @@ public class Message
     public ICollection<MessageReaction> Reactions { get; set; } = new List<MessageReaction>();
 }
 
+/// <summary>
+/// An emoji reaction on a message (composite PK: message_id + user_id + reaction_type).
+/// One user may add one reaction per emoji per message, and a message can carry
+/// several emoji groups at the same time.
+/// </summary>
+public class MessageReaction
+{
+    public Guid MessageId { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>The emoji itself, e.g. "👍".</summary>
+    public string ReactionType { get; set; } = default!;
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public Message? Message { get; set; }
+}
+
+/// <summary>
+/// A message hidden for one viewer only ("delete for me"). The row keeps the
+/// message in the conversation for everybody else, and the viewer simply does
+/// not see it in their own timeline any more.
+/// </summary>
+public class MessageHiddenForUser
+{
+    public Guid MessageId { get; set; }
+    public Guid UserId { get; set; }
+    public DateTimeOffset HiddenAt { get; set; }
+
+    public Message? Message { get; set; }
+}
+
+/// <summary>File attachment in [stora] — chat-data/{conversationId}/{yyyy}/{mm}/…</summary>
+public class MessageAttachment
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid MessageId { get; set; }
+    public string ObjectKey { get; set; } = default!;
+    public string ContentType { get; set; } = default!;
+    public long SizeBytes { get; set; }
+    public string FileName { get; set; } = default!;
+    public Message? Message { get; set; }
+}
+
+/// <summary>Projection maintained by consuming social.blocked.v1 — Chat never queries the Social DB.</summary>
+public class BlockedPairProjection
+{
+    public Guid BlockerId { get; set; }
+    public Guid BlockedUserId { get; set; }
+    public DateTimeOffset BlockedAt { get; set; }
+}
+
+/// <summary>Per-user chat preferences (one row per user), edited from the settings page.</summary>
+public class ChatUserSettings
+{
+    public Guid UserId { get; set; }
+    /// <summary>everyone | friends | nobody — who may start a new conversation with this user.</summary>
+    public string MessagePrivacy { get; set; } = "everyone";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
