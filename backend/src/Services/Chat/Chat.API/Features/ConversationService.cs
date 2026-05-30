@@ -115,3 +115,135 @@ public class ConversationService(
             throw new InvalidOperationException("This user only accepts messages from friends.");
     }
 
+    /// <summary>Finds the DM between the given participants, if it already exists.</summary>
+    private async Task<Conversation?> FindDmAsync(List<Guid> participants, CancellationToken ct)
+    {
+        return await db.Conversations
+            .Where(c => c.Type == "dm" && c.Members.Count == 2)
+            .Join(db.ConversationMembers, c => c.Id, m => m.ConversationId, (c, m) => new { Conversation = c, Member = m })
+            .Where(x => participants.Contains(x.Member.UserId))
+            .GroupBy(x => x.Conversation.Id)
+            .Select(g => new { ConversationId = g.Key, Count = g.Count() })
+            .Where(x => x.Count == participants.Count)
+            .Select(x => x.ConversationId)
+            .Join(db.Conversations, id => id, c => c.Id, (id, conv) => conv)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    // ---------- read ----------
+
+    public async Task<List<ConversationDto>> GetConversationsAsync(CancellationToken ct)
+    {
+        var conversations = await db.Conversations
+            .Include(c => c.Members)
+            .Where(c => c.Members.Any(m => m.UserId == Me))
+            .OrderByDescending(c => c.UpdatedAt)
+            .ToListAsync(ct);
+
+        var ids = conversations.Select(c => c.Id).ToList();
+        var (lastByConversation, unreadByConversation) = await LoadConversationStatsAsync(ids, ct);
+
+        var result = new List<ConversationDto>();
+        foreach (var conversation in conversations)
+        {
+            var dto = await ToDtoAsync(conversation, ct);
+            var last = lastByConversation.GetValueOrDefault(conversation.Id);
+
+            dto = dto with
+            {
+                LastMessageAt = last?.SentAt,
+                LastMessagePreview = last is null ? null : Preview(last),
+                LastMessageSenderUserId = last?.SenderUserId,
+                UnreadCount = unreadByConversation.GetValueOrDefault(conversation.Id)
+            };
+            result.Add(dto);
+        }
+        return result;
+    }
+
+    public async Task<ConversationDto> GetConversationAsync(Guid conversationId, CancellationToken ct)
+    {
+        var conversation = await db.Conversations.Include(c => c.Members)
+            .SingleOrDefaultAsync(c => c.Id == conversationId, ct)
+            ?? throw new KeyNotFoundException("Conversation not found.");
+        if (conversation.Members.All(m => m.UserId != Me))
+            throw new UnauthorizedAccessException("Not a member of this conversation.");
+
+        var (lastByConversation, unreadByConversation) = await LoadConversationStatsAsync([conversationId], ct);
+        var last = lastByConversation.GetValueOrDefault(conversationId);
+
+        return (await ToDtoAsync(conversation, ct)) with
+        {
+            LastMessageAt = last?.SentAt,
+            LastMessagePreview = last is null ? null : Preview(last),
+            LastMessageSenderUserId = last?.SenderUserId,
+            UnreadCount = unreadByConversation.GetValueOrDefault(conversationId)
+        };
+    }
+
+    /// <summary>Loads the newest message and the unread counter for the given conversations (2 queries).</summary>
+    private async Task<(Dictionary<Guid, Message> Last, Dictionary<Guid, int> Unread)> LoadConversationStatsAsync(
+        List<Guid> conversationIds, CancellationToken ct)
+    {
+        if (conversationIds.Count == 0) return (new Dictionary<Guid, Message>(), new Dictionary<Guid, int>());
+
+        var messages = await db.Messages.AsNoTracking()
+            .Where(m => conversationIds.Contains(m.ConversationId) && m.Status == "sent")
+            .OrderByDescending(m => m.SentAt).ThenByDescending(m => m.Id)
+            .ToListAsync(ct);
+        var last = messages
+            .GroupBy(m => m.ConversationId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var myMarkers = await db.ConversationMembers.AsNoTracking()
+            .Where(m => m.UserId == Me && conversationIds.Contains(m.ConversationId))
+            .Select(m => new { m.ConversationId, m.LastReadAt })
+            .ToListAsync(ct);
+        var markerByConversation = myMarkers.ToDictionary(m => m.ConversationId, m => m.LastReadAt);
+
+        var unread = new Dictionary<Guid, int>();
+        foreach (var group in messages.Where(m => m.SenderUserId != Me).GroupBy(m => m.ConversationId))
+        {
+            var marker = markerByConversation.GetValueOrDefault(group.Key);
+            var count = marker is null
+                ? group.Count()
+                : group.Count(m => m.SentAt > marker.Value);
+            if (count > 0) unread[group.Key] = count;
+        }
+        return (last, unread);
+    }
+
+    /// <summary>Short preview of the last message of a conversation.</summary>
+    private static string Preview(Message message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.Body))
+            return message.Body.Length > 120 ? message.Body[..120] + "…" : message.Body;
+        return message.Attachments.Count > 0 ? "Sent an attachment" : "Sent a message";
+    }
+
+    private async Task<ConversationDto> ToDtoAsync(Conversation conversation, CancellationToken ct)
+    {
+        // Presence is best-effort: when Redis is unavailable the chat API must still serve conversations.
+        var online = new Dictionary<Guid, bool>();
+        try
+        {
+            online = await presence.AreOnlineAsync(conversation.Members.Select(m => m.UserId), ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Presence lookup failed for conversation {ConversationId}; falling back to offline.", conversation.Id);
+        }
+
+        var members = conversation.Members
+            .Select(m => new MemberDto(m.UserId, m.Role, m.LastReadAt, online.GetValueOrDefault(m.UserId)))
+            .ToList();
+
+        return new ConversationDto(
+            conversation.Id,
+            conversation.Type,
+            conversation.Title,
+            conversation.CreatedAt,
+            conversation.UpdatedAt,
+            members);
+    }
+}
