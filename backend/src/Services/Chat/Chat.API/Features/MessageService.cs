@@ -349,3 +349,126 @@ public class MessageService(
         return dto;
     }
 
+    /// <summary>Removes one emoji reaction of the viewer.</summary>
+    public async Task<MessageReactionDto> RemoveMessageReactionAsync(
+        Guid messageId, string reactionType, CancellationToken ct)
+    {
+        var emoji = NormalizeReaction(reactionType);
+        var message = await db.Messages.Include(m => m.Reactions)
+            .SingleOrDefaultAsync(m => m.Id == messageId, ct)
+            ?? throw new KeyNotFoundException("Message not found.");
+        await guard.EnsureMemberAsync(message.ConversationId, ct);
+
+        var existing = message.Reactions.FirstOrDefault(r => r.UserId == Me && r.ReactionType == emoji);
+        if (existing is not null)
+        {
+            db.MessageReactions.Remove(existing);
+            message.Reactions.Remove(existing);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var dto = BuildReactionDto(message.Reactions, emoji);
+        await PushMessageReactionAsync(message.ConversationId, messageId, emoji, Me, false, ct);
+        return dto;
+    }
+
+    /// <summary>Normalizes the emoji key: trimmed, max 16 chars, no control characters.</summary>
+    private static string NormalizeReaction(string reactionType)
+    {
+        var emoji = (reactionType ?? string.Empty).Trim();
+        if (emoji.Length == 0) throw new ArgumentException("Pick a reaction.");
+        if (emoji.Length > 16) throw new ArgumentException("The reaction is too long.");
+        if (emoji.Any(char.IsControl)) throw new ArgumentException("The reaction is not valid.");
+        return emoji;
+    }
+
+    private MessageReactionDto BuildReactionDto(IEnumerable<MessageReaction> reactions, string emoji)
+    {
+        var group = reactions.Where(r => r.ReactionType == emoji).ToList();
+        return new MessageReactionDto(emoji, group.Count, group.Any(r => r.UserId == Me));
+    }
+
+    // ---------- push over SignalR ----------
+
+    /// <summary>Sends a new message to the members of the conversation.</summary>
+    public async Task PushMessageAsync(Guid conversationId, MessageDto message, CancellationToken ct)
+    {
+        var conversation = await db.Conversations.AsNoTracking().Include(c => c.Members)
+            .SingleOrDefaultAsync(c => c.Id == conversationId, ct);
+        if (conversation is null) return;
+
+        var groups = conversation.Members.Select(m => $"user:{m.UserId}").ToArray();
+        await hub.Clients.Groups(groups).SendAsync("message-received", message, ct);
+    }
+
+    /// <summary>Notifies the conversation members that a message was edited.</summary>
+    public async Task PushMessageUpdatedAsync(Guid conversationId, MessageDto message, CancellationToken ct)
+    {
+        await hub.Clients.Group($"conversation:{conversationId}").SendAsync("message-updated", message, ct);
+    }
+
+    /// <summary>Notifies the conversation members that a message was unsent.</summary>
+    public async Task PushMessageDeletedAsync(Guid conversationId, Guid messageId, DateTimeOffset deletedAt, CancellationToken ct)
+    {
+        await hub.Clients.Group($"conversation:{conversationId}")
+            .SendAsync("message-deleted", new { conversationId, messageId, deletedAt }, ct);
+    }
+
+    /// <summary>Notifies the conversation members about a reaction change.</summary>
+    public async Task PushMessageReactionAsync(
+        Guid conversationId, Guid messageId, string reactionType, Guid userId, bool active, CancellationToken ct)
+    {
+        await hub.Clients.Group($"conversation:{conversationId}")
+            .SendAsync("message-reaction", new { conversationId, messageId, reactionType, userId, active }, ct);
+    }
+
+    // ---------- mapping to the DTO ----------
+
+    private async Task<MessageDto> ToMessageDtoAsync(
+        Message message, IReadOnlyDictionary<Guid, Message>? replied, CancellationToken ct)
+    {
+        var attachments = new List<AttachmentDto>();
+        foreach (var attachment in message.Attachments)
+        {
+            var url = await storage.GenerateDownloadUrlAsync(attachment.ObjectKey, ct: ct);
+            attachments.Add(new AttachmentDto(
+                attachment.Id, attachment.FileName, attachment.ContentType, attachment.SizeBytes, url));
+        }
+
+        // reaction groups: emoji + count + whether the viewer is in the group
+        var reactions = message.Reactions
+            .GroupBy(r => r.ReactionType)
+            .Select(g => new MessageReactionDto(g.Key, g.Count(), g.Any(r => r.UserId == Me)))
+            .OrderByDescending(r => r.Count)
+            .ToList();
+
+        MessageReplyDto? reply = null;
+        if (message.ReplyToMessageId is { } replyId
+            && replied is not null
+            && replied.TryGetValue(replyId, out var quoted))
+        {
+            reply = new MessageReplyDto(quoted.Id, quoted.SenderUserId, QuotedPreview(quoted), quoted.Status);
+        }
+
+        return new MessageDto(
+            message.Id,
+            message.ConversationId,
+            message.SenderUserId,
+            message.Body,
+            message.Status,
+            message.SentAt,
+            attachments,
+            message.EditedAt,
+            reactions,
+            reply);
+    }
+
+    /// <summary>Short preview of a quoted message (removed messages lose their body).</summary>
+    private static string? QuotedPreview(Message message)
+    {
+        if (message.Status == "deleted") return "Message removed";
+        if (!string.IsNullOrWhiteSpace(message.Body))
+            return message.Body.Length > 120 ? message.Body[..120] + "…" : message.Body;
+        return message.Attachments.Count > 0 ? "Sent an attachment" : null;
+    }
+}
