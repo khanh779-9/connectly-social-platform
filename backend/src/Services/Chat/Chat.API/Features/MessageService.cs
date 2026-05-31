@@ -210,3 +210,142 @@ public class MessageService(
     /// </summary>
     private static int UnsendWindowMinutes => BuildingBlocks.Env.ConnectlyEnv.GetInt("CHAT_UNSEND_WINDOW_MINUTES", 0);
 
+    /// <summary>
+    /// Edits the body of a message. Only the sender may edit, only inside the
+    /// edit window and never after the message was unsent.
+    /// </summary>
+    public async Task<MessageDto> EditMessageAsync(Guid messageId, EditMessageRequest request, CancellationToken ct)
+    {
+        var body = request.Body?.Trim();
+        if (string.IsNullOrWhiteSpace(body)) throw new ArgumentException("The message cannot be empty.");
+        if (body.Length > 8000) throw new ArgumentException("The message is too long.");
+
+        var message = await db.Messages.Include(m => m.Attachments).Include(m => m.Reactions)
+            .SingleOrDefaultAsync(m => m.Id == messageId, ct)
+            ?? throw new KeyNotFoundException("Message not found.");
+        if (message.SenderUserId != Me) throw new UnauthorizedAccessException("You can only edit your own messages.");
+        if (message.Status == "deleted") throw new InvalidOperationException("This message was removed.");
+        if (message.SentAt < DateTimeOffset.UtcNow.AddMinutes(-EditWindowMinutes))
+            throw new InvalidOperationException("The edit window for this message has expired.");
+
+        message.Body = body;
+        message.EditedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        IReadOnlyDictionary<Guid, Message>? replied = null;
+        if (message.ReplyToMessageId is { } quotedId)
+        {
+            var quoted = await db.Messages.AsNoTracking()
+                .Include(m => m.Attachments)
+                .SingleOrDefaultAsync(m => m.Id == quotedId, ct);
+            if (quoted is not null) replied = new Dictionary<Guid, Message> { [quoted.Id] = quoted };
+        }
+
+        var dto = await ToMessageDtoAsync(message, replied, ct);
+        await PushMessageUpdatedAsync(message.ConversationId, dto, ct);
+        return dto;
+    }
+
+    /// <summary>
+    /// Unsend a message for everyone: the body and attachments are cleared, the
+    /// message stays in the timeline as a "removed" placeholder and every
+    /// reaction/attachment is dropped. The sender may recall a message at any
+    /// time — the window is configurable but unlimited by default.
+    /// </summary>
+    public async Task DeleteMessageAsync(Guid messageId, CancellationToken ct)
+    {
+        var message = await db.Messages.Include(m => m.Reactions).Include(m => m.Attachments)
+            .SingleOrDefaultAsync(m => m.Id == messageId, ct)
+            ?? throw new KeyNotFoundException("Message not found.");
+        if (message.SenderUserId != Me) throw new UnauthorizedAccessException("You can only remove your own messages.");
+        if (message.Status == "deleted") return; // idempotent
+        if (UnsendWindowMinutes > 0 && message.SentAt < DateTimeOffset.UtcNow.AddMinutes(-UnsendWindowMinutes))
+            throw new InvalidOperationException("The unsend window for this message has expired.");
+
+        message.Status = "deleted";
+        message.Body = null;
+        message.DeletedAt = DateTimeOffset.UtcNow;
+
+        // reactions of a removed message are invalidated together with it
+        if (message.Reactions.Count > 0)
+        {
+            db.MessageReactions.RemoveRange(message.Reactions);
+            message.Reactions.Clear();
+        }
+
+        // attachments are removed together with the message body
+        if (message.Attachments.Count > 0)
+        {
+            db.MessageAttachments.RemoveRange(message.Attachments);
+            foreach (var attachment in message.Attachments)
+            {
+                try { await storage.DeleteObjectAsync(attachment.ObjectKey, ct); }
+                catch { /* the row removal is what matters; orphan objects are harmless */ }
+            }
+            message.Attachments.Clear();
+        }
+
+        await db.SaveChangesAsync(ct);
+        await PushMessageDeletedAsync(message.ConversationId, message.Id, message.DeletedAt.Value, ct);
+    }
+
+    /// <summary>
+    /// Hides a message for the viewer only ("delete for me"). The message stays
+    /// untouched for everybody else; the viewer simply stops seeing it in their
+    /// own timeline. Idempotent, and never broadcast over SignalR.
+    /// </summary>
+    public async Task HideMessageAsync(Guid messageId, CancellationToken ct)
+    {
+        var message = await db.Messages.AsNoTracking()
+            .SingleOrDefaultAsync(m => m.Id == messageId, ct)
+            ?? throw new KeyNotFoundException("Message not found.");
+
+        var hidden = await db.HiddenMessages.FindAsync([messageId, Me]);
+        if (hidden is null)
+        {
+            db.HiddenMessages.Add(new MessageHiddenForUser
+            {
+                MessageId = messageId,
+                UserId = Me,
+                HiddenAt = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
+    // ---------- reactions ----------
+
+    /// <summary>
+    /// Adds an emoji reaction. One user may add one reaction per emoji per
+    /// message; adding the same emoji twice is a no-op.
+    /// </summary>
+    public async Task<MessageReactionDto> SetMessageReactionAsync(
+        Guid messageId, string reactionType, CancellationToken ct)
+    {
+        var emoji = NormalizeReaction(reactionType);
+        var message = await db.Messages.Include(m => m.Reactions)
+            .SingleOrDefaultAsync(m => m.Id == messageId, ct)
+            ?? throw new KeyNotFoundException("Message not found.");
+        if (message.Status == "deleted") throw new InvalidOperationException("This message was removed.");
+        await guard.EnsureMemberAsync(message.ConversationId, ct);
+
+        var existing = message.Reactions.FirstOrDefault(r => r.UserId == Me && r.ReactionType == emoji);
+        if (existing is null)
+        {
+            var reaction = new MessageReaction
+            {
+                MessageId = messageId,
+                UserId = Me,
+                ReactionType = emoji,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            db.MessageReactions.Add(reaction);
+            message.Reactions.Add(reaction);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var dto = BuildReactionDto(message.Reactions, emoji);
+        await PushMessageReactionAsync(message.ConversationId, messageId, emoji, Me, true, ct);
+        return dto;
+    }
+
