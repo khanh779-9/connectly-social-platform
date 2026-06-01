@@ -45,3 +45,36 @@ public class ConnectlyChatHub(
         // note: fan-out to those subscribed on this user — MVP: only interested parties poll presence
     }
 
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        // A user can have several tabs open: only the last one going away marks them offline.
+        if (UserId != Guid.Empty && registry.Detach(UserId, Context.ConnectionId))
+        {
+            await presence.MarkOfflineAsync(UserId);
+            await hub.Clients.Group(UserGroup).SendAsync("presence-updated", new { userId = UserId, online = false });
+        }
+        await base.OnDisconnectedAsync(exception);
+    }
+
+    /// <summary>Join a conversation group (server verifies membership).</summary>
+    public async Task SubscribeConversation(Guid conversationId)
+    {
+        var isMember = await db.ConversationMembers.AsNoTracking()
+            .AnyAsync(m => m.ConversationId == conversationId && m.UserId == UserId);
+        if (!isMember) throw new HubException("Not a member of this conversation.");
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, ConversationGroup(conversationId));
+    }
+
+    public async Task UnsubscribeConversation(Guid conversationId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, ConversationGroup(conversationId));
+    }
+
+    /// <summary>client typing indicator inside conversation</summary>
+    public async Task NotifyTyping(Guid conversationId)
+    {
+        await hub.Clients.Group(ConversationGroup(conversationId)).SendAsync("typing", new { conversationId, userId = UserId });
+    }
+}
+
