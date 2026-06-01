@@ -76,3 +76,62 @@ public static class ChatEndpoints
             catch (Exception ex) { return ex.ToProblem(); }
         });
 
+        group.MapPost("/conversations/{conversationId:guid}/messages", async (Guid conversationId, [FromBody] SendMessageRequest request, [FromServices] MessageService messages, CancellationToken ct) =>
+        {
+            try
+            {
+                var (message, _) = await messages.SendMessageAsync(conversationId, request, ct);
+                await messages.PushMessageAsync(conversationId, message, ct); // fanout over SignalR
+                return Results.Ok(message);
+            }
+            catch (Exception ex) { return ex.ToProblem("blocked"); }
+        });
+
+        group.MapGet("/conversations/{conversationId:guid}/messages", async (Guid conversationId, string? cursor, int limit, [FromServices] MessageService messages, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await messages.GetMessagesAsync(conversationId, cursor, limit, ct)); }
+            catch (Exception ex) { return ex.ToProblem(); }
+        });
+
+        group.MapPost("/conversations/{conversationId:guid}/read", async (Guid conversationId, [FromServices] MessageService messages, CancellationToken ct) =>
+        {
+            try { await messages.MarkReadAsync(conversationId, ct); return Results.NoContent(); }
+            catch (Exception ex) { return ex.ToProblem(); }
+        });
+
+        // ---------- message actions ----------
+        group.MapPatch("/messages/{messageId:guid}", async (Guid messageId, [FromBody] EditMessageRequest request, [FromServices] MessageService messages, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await messages.EditMessageAsync(messageId, request, ct)); }
+            catch (Exception ex) { return ex.ToProblem("message_state"); }
+        });
+
+        // Recall for everybody: the body is cleared and both sides see a placeholder.
+        group.MapDelete("/messages/{messageId:guid}", async (Guid messageId, [FromServices] MessageService messages, CancellationToken ct) =>
+        {
+            try { await messages.DeleteMessageAsync(messageId, ct); return Results.NoContent(); }
+            catch (Exception ex) { return ex.ToProblem("message_state"); }
+        });
+
+        // Delete for me only: the message leaves the timeline of the viewer.
+        group.MapDelete("/messages/{messageId:guid}/hide", async (Guid messageId, [FromServices] MessageService messages, CancellationToken ct) =>
+        {
+            try { await messages.HideMessageAsync(messageId, ct); return Results.NoContent(); }
+            catch (Exception ex) { return ex.ToProblem("message_state"); }
+        });
+
+        group.MapPut("/messages/{messageId:guid}/reactions/{reactionType}", async (Guid messageId, string reactionType, [FromServices] MessageService messages, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await messages.SetMessageReactionAsync(messageId, reactionType, ct)); }
+            catch (Exception ex) { return ex.ToProblem("message_state"); }
+        });
+
+        group.MapDelete("/messages/{messageId:guid}/reactions/{reactionType}", async (Guid messageId, string reactionType, [FromServices] MessageService messages, CancellationToken ct) =>
+        {
+            try { return Results.Ok(await messages.RemoveMessageReactionAsync(messageId, reactionType, ct)); }
+            catch (Exception ex) { return ex.ToProblem("message_state"); }
+        });
+
+        return app;
+    }
+}
