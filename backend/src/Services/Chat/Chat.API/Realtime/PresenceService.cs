@@ -55,3 +55,37 @@ public class PresenceService(StackExchange.Redis.IConnectionMultiplexer redis)
         batch.Execute();
         var results = await Task.WhenAll(tasks);
 
+        return Enumerable.Range(0, ids.Length).ToDictionary(i => ids[i], i => results[i]);
+    }
+
+    /// <summary>Online flag and last-seen timestamp for a batch of users, in one round-trip.</summary>
+    public async Task<Dictionary<Guid, PresenceSnapshot>> GetSnapshotsAsync(
+        IEnumerable<Guid> userIds, CancellationToken ct = default)
+    {
+        var db = redis.GetDatabase();
+        var ids = userIds.Distinct().ToArray();
+        if (ids.Length == 0) return new Dictionary<Guid, PresenceSnapshot>();
+
+        var batch = db.CreateBatch();
+        var onlineTasks = ids.Select(id => batch.KeyExistsAsync(PresPrefix + id)).ToArray();
+        var seenTasks = ids.Select(id => batch.StringGetAsync(SeenPrefix + id)).ToArray();
+        batch.Execute();
+
+        await Task.WhenAll(onlineTasks);
+        await Task.WhenAll(seenTasks);
+
+        var snapshots = new Dictionary<Guid, PresenceSnapshot>(ids.Length);
+        for (var i = 0; i < ids.Length; i++)
+        {
+            DateTimeOffset? lastSeen = DateTimeOffset.TryParse(
+                seenTasks[i].Result.ToString(), CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind, out var parsed)
+                ? parsed
+                : null;
+            snapshots[ids[i]] = new PresenceSnapshot(onlineTasks[i].Result, lastSeen);
+        }
+
+        return snapshots;
+    }
+}
+
