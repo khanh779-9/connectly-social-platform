@@ -48,3 +48,38 @@ builder.Services.AddHttpClient<SocialRelationshipClient>(client =>
     client.Timeout = BuildingBlocks.Env.ConnectlyEnv.InternalHttpTimeout();
 });
 
+// messaging
+// chat.message-sent and chat.conversation-created have no consumer today (the
+// timeline is pushed over SignalR), so they are published fire-and-forget:
+// a missing queue binding must not keep them in the outbox forever.
+builder.Services.AddConnectlyMessaging<ChatDbContext>(
+    "chat",
+    ConversationService.Producer,
+    expectsConsumer: type => type is not (EventTypes.Chat.MessageSent or EventTypes.Chat.ConversationCreated));
+builder.Services.AddConnectlyEventConsumer<ChatDbContext, BlockedConsumer>();
+builder.Services.AddConnectlyEventConsumer<ChatDbContext, UnblockedConsumer>();
+
+// SignalR realtime
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = BuildingBlocks.Env.ConnectlyEnv.SignalREnableDetailedErrors();
+    options.KeepAliveInterval = BuildingBlocks.Env.ConnectlyEnv.SignalRKeepAliveInterval();
+})
+    .AddJsonProtocol(o => o.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
+
+var app = builder.Build();
+
+app.Services.MigrateOnStartup<ChatDbContext>();
+
+app.UseConnectlyCommon();
+
+app.UseConnectlyHealth();
+app.MapOpenApi();
+app.MapHub<ConnectlyChatHub>("/hubs/chat");
+app.MapChatEndpoints();
+
+app.Run();
+
+
+
+
