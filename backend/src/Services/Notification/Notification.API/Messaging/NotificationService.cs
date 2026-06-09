@@ -21,3 +21,36 @@ public class NotificationService(NotificationDbContext db, IHubContext<Notificat
     {
         if (actorUserId == recipientUserId) return; // no self-notifications
 
+        var notification = new NotificationEntity
+        {
+            RecipientUserId = recipientUserId,
+            ActorUserId = actorUserId == recipientUserId ? null : actorUserId,
+            Type = type,
+            TargetPostId = targetPostId,
+            TargetCommentId = targetCommentId,
+            Preview = preview,
+            DeviceLabel = deviceLabel,
+            IpAddress = ipAddress,
+            Location = location,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        db.Notifications.Add(notification);
+        await db.SaveChangesAsync(ct);
+
+        await hub.Clients.Group($"user:{recipientUserId}").SendAsync("notification-received", new
+        {
+            id = notification.Id,
+            type = notification.Type,
+            actorUserId = notification.ActorUserId,
+            targetPostId = notification.TargetPostId,
+            targetCommentId = notification.TargetCommentId,
+            preview = notification.Preview,
+            deviceLabel = notification.DeviceLabel,
+            ipAddress = notification.IpAddress,
+            location = notification.Location,
+            createdAt = notification.CreatedAt
+        }, ct);
+    }
+}
+
+
