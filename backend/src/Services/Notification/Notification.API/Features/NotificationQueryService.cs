@@ -42,3 +42,28 @@ public class NotificationQueryService(NotificationDbContext db, ICurrentUser cur
             n.ReadAt)).ToList();
     }
 
+    public async Task<int> CountUnreadAsync(CancellationToken ct)
+    {
+        var me = currentUser.RequireUserId();
+        return await db.Notifications.AsNoTracking()
+            .CountAsync(n => n.RecipientUserId == me && n.Status == "unread", ct);
+    }
+
+    public async Task MarkReadAsync(Guid notificationId, CancellationToken ct)
+    {
+        var notification = await db.Notifications.SingleOrDefaultAsync(
+            n => n.Id == notificationId && n.RecipientUserId == currentUser.RequireUserId(), ct)
+            ?? throw new KeyNotFoundException();
+        notification.Status = "read";
+        notification.ReadAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task MarkAllReadAsync(CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await db.Notifications
+            .Where(n => n.RecipientUserId == currentUser.RequireUserId() && n.Status == "unread")
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.Status, "read").SetProperty(n => n.ReadAt, now), ct);
+    }
+}
