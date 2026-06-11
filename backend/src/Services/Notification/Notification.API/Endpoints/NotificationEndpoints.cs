@@ -22,3 +22,21 @@ public static class NotificationEndpoints
         group.MapGet("/notifications/unread-count", async ([FromServices] NotificationQueryService service, CancellationToken ct) =>
             Results.Ok(new { count = await service.CountUnreadAsync(ct) }));
 
+        group.MapPost("/notifications/{notificationId:guid}/read", async (
+            Guid notificationId,
+            [FromServices] NotificationQueryService service,
+            CancellationToken ct) =>
+        {
+            await service.MarkReadAsync(notificationId, ct);
+            return Results.NoContent();
+        });
+
+        group.MapPost("/notifications/read-all", async ([FromServices] NotificationQueryService service, CancellationToken ct) =>
+        {
+            await service.MarkAllReadAsync(ct);
+            return Results.NoContent();
+        });
+
+        return app;
+    }
+}
