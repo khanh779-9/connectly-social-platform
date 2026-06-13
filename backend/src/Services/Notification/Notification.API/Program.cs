@@ -36,3 +36,28 @@ builder.Services
     .AddConnectlyEventConsumer<NotificationDbContext, StoryViewedConsumer>()
     .AddConnectlyEventConsumer<NotificationDbContext, UserMentionedConsumer>();
 
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = BuildingBlocks.Env.ConnectlyEnv.SignalREnableDetailedErrors();
+    options.KeepAliveInterval = BuildingBlocks.Env.ConnectlyEnv.SignalRKeepAliveInterval();
+})
+    .AddJsonProtocol(o => o.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
+
+var app = builder.Build();
+
+app.Services.MigrateOnStartup<NotificationDbContext>();
+
+app.UseConnectlyCommon();
+
+app.UseConnectlyHealth();
+app.MapOpenApi();
+app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapNotificationEndpoints();
+app.MapInternalNotificationEndpoints();
+
+app.Run();
+
+
+
+
+
