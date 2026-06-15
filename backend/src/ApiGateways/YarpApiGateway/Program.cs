@@ -43,3 +43,22 @@ void AddCluster(string prefix, string serviceName, int fallbackPort)
     });
 }
 
+AddCluster("identity", "identity", 5201);
+AddCluster("social", "social", 5202);
+AddCluster("chat", "chat", 5203);
+AddCluster("notification", "notification", 5204);
+
+builder.Services.AddReverseProxy()
+    .LoadFromMemory(routes, clusters);
+
+var app = builder.Build();
+
+app.UseCors();
+app.MapReverseProxy();
+
+// friendly root
+app.MapGet("/", () => Results.Json(new { name = "connectly-gateway", status = "ok" }));
+
+app.Run();
+
+
