@@ -369,3 +369,374 @@
     --tooltip-border-radius: var(--radius-sm);
     --tooltip-offset: 8px;
 
+    /* Toast */
+    --toast-min-width: 280px;
+    --toast-max-width: 420px;
+    --toast-padding-x: 16px;
+    --toast-padding-y: 12px;
+    --toast-gap: 12px;
+    --toast-border-radius: var(--radius-md);
+    --toast-icon-size: 20px;
+
+    /* Tabs */
+    --tab-height: 40px;
+    --tab-padding-x: 16px;
+    --tab-font-size: var(--text-sm);
+    --tab-font-weight: var(--font-medium);
+    --tab-indicator-height: 2px;
+
+    /* Table */
+    --table-cell-padding-x: 12px;
+    --table-cell-padding-y: 10px;
+    --table-header-font-size: var(--text-xs);
+    --table-header-font-weight: var(--font-semibold);
+    --table-row-hover-bg: var(--color-surface-sunken);
+
+    /* Separator */
+    --separator-thickness: 1px;
+    --separator-color: var(--color-border-default);
+
+    /* Focus Ring */
+    --focus-ring-width: 2px;
+    --focus-ring-offset: 1px;
+    --focus-ring-color: var(--accent-ring);
+
+    /* ========== LEGACY COMPAT (map existing vars to semantic) ========== */
+    --background: var(--color-canvas);
+    --foreground: var(--color-text-primary);
+    --card: var(--color-surface-default);
+    --card-foreground: var(--color-text-primary);
+    --popover: var(--color-surface-default);
+    --popover-foreground: var(--color-text-primary);
+    --primary: var(--color-text-primary);
+    --primary-foreground: var(--color-text-inverse);
+    --secondary: var(--color-surface-sunken);
+    --secondary-foreground: var(--color-text-primary);
+    --muted: var(--color-surface-sunken);
+    --muted-foreground: var(--color-text-tertiary);
+
+    /* Semantic accent roles — one hue, multiple purposes */
+    --accent-action: var(--color-action-primary);
+    --accent-action-hover: var(--color-action-primary-hover);
+    --accent-ring: var(--color-border-focus);
+    --accent-online: var(--color-success);
+    --accent-badge: var(--color-action-primary);
+    --accent-soft: var(--color-action-primary-soft);
+    --accent-foreground: var(--color-action-primary-foreground);
+
+    --primary-hover: var(--neutral-800);
+    --secondary-hover: var(--neutral-200);
+    --destructive-soft: var(--color-danger-soft);
+    --destructive: var(--color-danger);
+    --destructive-foreground: var(--color-text-inverse);
+    --border: var(--color-border-default);
+    --input: var(--color-border-strong);
+    --ring: var(--accent-ring);
+
+    /* Single radius scale */
+    --radius: var(--radius-md);
+  }
+
+  .dark {
+    /* ========== PRIMITIVE TOKENS (dark) ========== */
+    --neutral-0: #ffffff;
+    --neutral-50: #0f1115;
+    --neutral-100: #1a1d23;
+    --neutral-200: #2a2d31;
+    --neutral-300: #3b4045;
+    --neutral-400: #6b7280;
+    --neutral-500: #9ca3af;
+    --neutral-600: #d1d5db;
+    --neutral-700: #e5e7eb;
+    --neutral-800: #f3f4f6;
+    --neutral-900: #f9fafb;
+    --neutral-950: #ffffff;
+
+    --primary-50: #042f2e;
+    --primary-100: #134e4a;
+    --primary-200: #115e59;
+    --primary-300: #0f766e;
+    --primary-400: #14b8a6;
+    --primary-500: #2dd4bf;
+    --primary-600: #5eead4;
+    --primary-700: #99f6e4;
+    --primary-800: #ccfbf1;
+    --primary-900: #f0fdfa;
+    --primary-950: #ffffff;
+
+    --success-50: #052e16;
+    --success-100: #14532d;
+    --success-200: #166534;
+    --success-300: #15803d;
+    --success-400: #16a34a;
+    --success-500: #22c55e;
+    --success-600: #4ade80;
+    --success-700: #86efac;
+    --success-800: #bbf7d0;
+    --success-900: #dcfce7;
+    --success-950: #f0fdf4;
+
+    --warning-50: #422006;
+    --warning-100: #78350f;
+    --warning-200: #92400e;
+    --warning-300: #b45309;
+    --warning-400: #d97706;
+    --warning-500: #f59e0b;
+    --warning-600: #fbbf24;
+    --warning-700: #fcd34d;
+    --warning-800: #fde68a;
+    --warning-900: #fef3c7;
+    --warning-950: #fffbeb.
+
+    --danger-50: #450a0a;
+    --danger-100: #7f1d1d.
+    --danger-200: #991b1b.
+    --danger-300: #b91c1c.
+    --danger-400: #dc2626.
+    --danger-500: #ef4444.
+    --danger-600: #f87171.
+    --danger-700: #fca5a5.
+    --danger-800: #fecaca.
+    --danger-900: #fee2e2.
+    --danger-950: #fef2f2.
+
+    --info-50: #1e3a8a.
+    --info-100: #1e40af.
+    --info-200: #1d4ed8.
+    --info-300: #2563eb.
+    --info-400: #3b82f6.
+    --info-500: #60a5fa.
+    --info-600: #93c5fd.
+    --info-700: #bfdbfe.
+    --info-800: #dbeafe.
+    --info-900: #eff6ff.
+    --info-950: #f0f6ff.
+
+    /* ========== SEMANTIC TOKENS (dark) ========== */
+    /* Colors - surfaces */
+    --color-canvas: var(--neutral-50);
+    --color-surface-default: var(--neutral-100);
+    --color-surface-raised: var(--neutral-200);
+    --color-surface-sunken: var(--neutral-0);
+    --color-surface-brand: var(--primary-100);
+
+    /* Colors - borders */
+    --color-border-subtle: var(--neutral-200);
+    --color-border-default: var(--neutral-200);
+    --color-border-strong: var(--neutral-300);
+    --color-border-focus: var(--primary-400);
+    --color-border-error: var(--danger-400);
+    --color-border-success: var(--success-400);
+
+    /* Colors - text */
+    --color-text-primary: var(--neutral-900);
+    --color-text-secondary: var(--neutral-600);
+    --color-text-tertiary: var(--neutral-500);
+    --color-text-disabled: var(--neutral-400);
+    --color-text-inverse: var(--neutral-0);
+    --color-text-link: var(--primary-400);
+    --color-text-on-accent: var(--primary-950);
+
+    /* Colors - icons */
+    --color-icon-primary: var(--neutral-600);
+    --color-icon-secondary: var(--neutral-500);
+    --color-icon-disabled: var(--neutral-400);
+    --color-icon-on-accent: var(--primary-950);
+
+    /* Colors - actions */
+    --color-action-primary: var(--primary-400);
+    --color-action-primary-hover: var(--primary-300);
+    --color-action-primary-active: var(--primary-200);
+    --color-action-primary-soft: var(--primary-900);
+    --color-action-primary-foreground: var(--primary-950);
+
+    /* Colors - semantic states */
+    --color-success: var(--success-400);
+    --color-success-soft: var(--success-900);
+    --color-success-foreground: var(--success-50);
+    --color-warning: var(--warning-400);
+    --color-warning-soft: var(--warning-900);
+    --color-warning-foreground: var(--warning-50);
+    --color-danger: var(--danger-400);
+    --color-danger-soft: var(--danger-900);
+    --color-danger-foreground: var(--danger-50);
+    --color-info: var(--info-400);
+    --color-info-soft: var(--info-900);
+    --color-info-foreground: var(--info-50);
+
+    /* ========== LEGACY COMPAT (dark) ========== */
+    --background: var(--color-canvas);
+    --foreground: var(--color-text-primary);
+    --card: var(--color-surface-default);
+    --card-foreground: var(--color-text-primary);
+    --popover: var(--color-surface-default);
+    --popover-foreground: var(--color-text-primary);
+    --primary: var(--color-text-primary);
+    --primary-foreground: var(--color-text-inverse);
+    --secondary: var(--color-surface-raised);
+    --secondary-foreground: var(--color-text-primary);
+    --muted: var(--color-surface-raised);
+    --muted-foreground: var(--color-text-tertiary);
+
+    --accent-action: var(--color-action-primary);
+    --accent-action-hover: var(--color-action-primary-hover);
+    --accent-ring: var(--color-border-focus);
+    --accent-online: var(--color-success);
+    --accent-badge: var(--color-action-primary);
+    --accent-soft: var(--color-action-primary-soft);
+    --accent-foreground: var(--color-action-primary-foreground);
+
+    --primary-hover: var(--neutral-200);
+    --secondary-hover: var(--neutral-200);
+    --destructive-soft: var(--color-danger-soft);
+    --destructive: var(--color-danger);
+    --destructive-foreground: var(--color-text-inverse);
+    --border: var(--color-border-default);
+    --input: var(--color-border-strong);
+    --ring: var(--accent-ring);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-app);
+    font-size: 14px;
+    line-height: 1.5;
+    /* Keep the OS smoothing. Tailwind's `antialiased` thins the strokes and
+       reads as blurred text on low-DPI screens, which is where this product
+       mostly runs. */
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+  }
+
+  /* Headings use the same family as body copy — only the size and weight differ. */
+  h1, h2, h3, h4, h5, h6,
+  .display, .heading {
+    font-family: var(--font-app);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--foreground);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+}
+
+@layer utilities {
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Semantic accent utilities — map to CSS variables for consistent theming */
+  .text-accent-action { color: var(--accent-action); }
+  .text-accent-badge { color: var(--accent-badge); }
+  .text-accent-foreground { color: var(--accent-foreground); }
+  .text-muted-foreground { color: var(--muted-foreground); }
+
+  .bg-accent-action { background-color: var(--accent-action); }
+  .bg-accent-action-hover:hover { background-color: var(--accent-action-hover); }
+  .bg-accent-soft { background-color: var(--accent-soft); }
+  .bg-accent-badge { background-color: var(--accent-badge); }
+  .bg-accent-online { background-color: var(--accent-online); }
+
+  .border-accent-action { border-color: var(--accent-action); }
+  .border-accent-badge { border-color: var(--accent-badge); }
+  .ring-accent-action { --tw-ring-color: var(--accent-action); }
+  .ring-accent-ring { --tw-ring-color: var(--accent-ring); }
+
+  .fill-accent-action { fill: var(--accent-action); }
+  .fill-accent-badge { fill: var(--accent-badge); }
+
+  /* Typography primitive utilities */
+  .font-sans { font-family: var(--font-sans); }
+  .font-mono { font-family: var(--font-mono); }
+  .font-normal { font-weight: var(--font-normal); }
+  .font-medium { font-weight: var(--font-medium); }
+  .font-semibold { font-weight: var(--font-semibold); }
+  .font-bold { font-weight: var(--font-bold); }
+
+  .leading-none { line-height: var(--leading-none); }
+  .leading-tight { line-height: var(--leading-tight); }
+  .leading-snug { line-height: var(--leading-snug); }
+  .leading-normal { line-height: var(--leading-normal); }
+  .leading-relaxed { line-height: var(--leading-relaxed); }
+
+  .tracking-tighter { letter-spacing: var(--tracking-tighter); }
+  .tracking-tight { letter-spacing: var(--tracking-tight); }
+  .tracking-normal { letter-spacing: var(--tracking-normal); }
+  .tracking-wide { letter-spacing: var(--tracking-wide); }
+
+  /* Animation primitive utilities */
+  .duration-instant { transition-duration: var(--duration-instant); }
+  .duration-fast { transition-duration: var(--duration-fast); }
+  .duration-normal { transition-duration: var(--duration-normal); }
+  .duration-slow { transition-duration: var(--duration-slow); }
+  .duration-slower { transition-duration: var(--duration-slower); }
+
+  .ease-linear { transition-timing-function: var(--ease-linear); }
+  .ease-in { transition-timing-function: var(--ease-in); }
+  .ease-out { transition-timing-function: var(--ease-out); }
+  .ease-in-out { transition-timing-function: var(--ease-in-out); }
+  .ease-spring { transition-timing-function: var(--ease-spring); }
+  .ease-bounce { transition-timing-function: var(--ease-bounce); }
+
+  /* Scrollbars that match the flat chrome instead of the OS default. */
+  .scroll-quiet {
+    scrollbar-width: thin;
+    scrollbar-color: #cfd3d7 transparent;
+  }
+
+  .scroll-quiet::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scroll-quiet::-webkit-scrollbar-thumb {
+    background-color: #d6d9dc;
+    border-radius: 999px;
+  }
+
+  .scroll-quiet::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Interactive card lift — rule 5: linked card lifts 2px */
+  .card-interactive {
+    @apply transition-transform duration-150 ease-out;
+  }
+  .card-interactive:hover {
+    @apply -translate-y-0.5 shadow-md;
+  }
+
+  /* Clickable media focus ring */
+  .media-focus:focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-1 ring-offset-background;
+  }
+}
+
+/* Respect the OS "reduce motion" setting across the app. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
