@@ -234,3 +234,236 @@ export interface EventAttendeeDto {
   createdAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Stories & Highlights
+// ---------------------------------------------------------------------------
+
+export interface StoryDto {
+  id: string;
+  authorUserId: string;
+  /** pre-signed media URL (image or video) */
+  url: string;
+  contentType: string;
+  caption?: string | null;
+  createdAt: string;
+  /** null when the story was archived into a highlight */
+  expiresAt?: string | null;
+  viewCount: number;
+  viewerViewed: boolean;
+  /** "Public" | "Friends" | "OnlyMe" */
+  visibility?: string;
+}
+
+export interface StoryAuthorDto {
+  userId: string;
+  stories: StoryDto[];
+  /** true when at least one story was not seen by the viewer */
+  hasUnviewed: boolean;
+}
+
+export interface StoryViewDto {
+  viewerUserId: string;
+  viewedAt: string;
+}
+
+export interface HighlightDto {
+  id: string;
+  ownerUserId: string;
+  title: string;
+  createdAt: string;
+  /** pre-signed URL of the first story in the highlight */
+  coverUrl?: string | null;
+  storyCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Reels
+// ---------------------------------------------------------------------------
+
+export interface ReelDto {
+  id: string;
+  authorUserId: string;
+  caption?: string | null;
+  /** "Public" | "Friends" | "OnlyMe" */
+  visibility: string;
+  createdAt: string;
+  /** pre-signed URL of the video file */
+  url: string;
+  contentType: string;
+  reactionCount: number;
+  commentCount: number;
+  shareCount: number;
+  viewerReaction?: string | null;
+  viewerBookmarked: boolean;
+  /** qualified views (the reel was watched long enough) */
+  viewCount: number;
+  /** users tagged with @username in the caption */
+  mentions?: MentionDto[];
+}
+
+export interface NotificationApiDto {
+  id: string;
+  type: string;
+  actorUserId?: string | null;
+  targetPostId?: string | null;
+  targetCommentId?: string | null;
+  preview?: string | null;
+  /** Device description captured for a new sign-in, for example "Chrome on Windows". */
+  deviceLabel?: string | null;
+  /** IP address observed for a new sign-in. */
+  ipAddress?: string | null;
+  /** Coarse location observed for a new sign-in. */
+  location?: string | null;
+  status: string;
+  createdAt: string;
+  readAt?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Social graph
+// ---------------------------------------------------------------------------
+
+export interface RelationshipDto {
+  isFriend: boolean;
+  isFollowing: boolean;
+  hasIncomingRequest: boolean;
+  hasOutgoingRequest: boolean;
+  isBlocked: boolean;
+  isMuted: boolean;
+  followerCount: number;
+  followingCount: number;
+  friendCount: number;
+}
+
+export interface FriendRequestDto {
+  requestId: string;
+  otherUserId: string;
+  status: string;
+  createdAt: string;
+  profile: ProfileDto;
+}
+
+export interface FriendRequestResultDto {
+  friendRequestId: string;
+  requesterUserId: string;
+  targetUserId: string;
+  status: string;
+}
+
+export interface SearchResultDto {
+  users: ProfileDto[];
+  posts: PostDto[];
+  groups: GroupDto[];
+  pages: PageDto[];
+  events: EventDto[];
+  /** hashtags (without the leading #), most used first */
+  hashtags: string[];
+}
+
+export interface UploadTicketDto {
+  mediaId: string;
+  uploadUrl: string;
+  objectKey: string;
+  contentType: string;
+  /** False when the provider cannot take a browser upload: the file goes through the service. */
+  directUpload: boolean;
+}
+
+export interface MeDto {
+  userId: string;
+  displayName: string;
+  email: string;
+  status: string;
+}
+
+/** Online now, and when the user was last active when they are not. */
+export interface PresenceDto {
+  online: boolean;
+  lastSeenAt?: string | null;
+}
+
+/** One device signed in to the account (security settings). */
+export interface UserSessionDto {
+  id: string;
+  deviceLabel?: string | null;
+  userAgent?: string | null;
+  ipAddress?: string | null;
+  location?: string | null;
+  createdAt: string;
+  lastUsedAt?: string | null;
+  /** true for the browser that requested the list */
+  current: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+
+export interface ChatMemberDto {
+  userId: string;
+  role: string;
+  lastReadAt?: string | null;
+  online: boolean;
+}
+
+export interface ChatAttachmentDto {
+  id: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  url: string;
+}
+
+/** Descriptor of an uploaded file, sent along with a new chat message. */
+export interface ChatAttachmentUpload {
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  mediaId: string;
+}
+
+/** Pre-signed upload ticket handed out by the chat API. */
+export interface ChatAttachmentUploadTicket {
+  mediaId: string;
+  objectKey: string;
+  uploadUrl: string;
+}
+
+export interface ChatMessageReactionDto {
+  reactionType: string;
+  count: number;
+  viewerReacted: boolean;
+}
+
+export interface ChatMessageReplyDto {
+  messageId: string;
+  senderUserId: string;
+  preview?: string | null;
+  status: string; // sent | deleted
+}
+
+export interface ChatMessageDto {
+  id: string;
+  conversationId: string;
+  senderUserId: string;
+  body?: string | null;
+  status: string; // sent | deleted
+  sentAt: string;
+  attachments: ChatAttachmentDto[];
+  editedAt?: string | null;
+  reactions?: ChatMessageReactionDto[] | null;
+  replyTo?: ChatMessageReplyDto | null;
+}
+
+export interface ConversationDto {
+  id: string;
+  type: string; // dm | group
+  title?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  members: ChatMemberDto[];
+  lastMessageAt?: string | null;
+  lastMessagePreview?: string | null;
+  lastMessageSenderUserId?: string | null;
+  unreadCount: number;
+}
