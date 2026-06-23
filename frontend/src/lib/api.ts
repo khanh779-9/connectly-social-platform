@@ -48,3 +48,26 @@ async function getFreshToken(): Promise<string> {
   return refreshTask;
 }
 
+api.interceptors.request.use((config) => {
+  const token = readSession().accessToken;
+
+  config.headers = config.headers ?? {};
+  if (token) {
+    (config.headers as { Authorization?: string }).Authorization = `Bearer ${token}`;
+  }
+  (config.headers as { 'X-Device-Id'?: string })['X-Device-Id'] = getDeviceId();
+
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const request = error.config as (AxiosRequestConfig & { _retry?: boolean }) | undefined;
+
+    // Only a 401 gets one retry. Other errors and retried requests go straight out.
+    if (error.response?.status !== 401 || !request || request._retry) {
+      return Promise.reject(error);
+    }
+    request._retry = true;
+
