@@ -71,3 +71,23 @@ api.interceptors.response.use(
     }
     request._retry = true;
 
+    const before = readSession();
+    try {
+      const token = await getFreshToken();
+      request.headers = request.headers ?? {};
+      (request.headers as { Authorization?: string }).Authorization = `Bearer ${token}`;
+      return api.request(request);
+    } catch (refreshError) {
+      // Another session took over while refreshing: keep it and just fail this call.
+      if (readSession().refreshToken !== before.refreshToken) {
+        return Promise.reject(refreshError);
+      }
+
+      clearSession();
+      if (window.location.pathname !== '/login') {
+        window.location.assign('/login');
+      }
+      return Promise.reject(refreshError);
+    }
+  },
+);
