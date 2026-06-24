@@ -825,3 +825,356 @@ export async function fetchReels(
   return response.data;
 }
 
+/** Reels published by one creator (profile grid). */
+export async function fetchProfileReels(
+  userId: string,
+  cursor?: string,
+  limit = 12,
+): Promise<CursorPageOf<ReelDto>> {
+  const params = { limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<ReelDto>>(`${SOCIAL_API}/profiles/${userId}/reels`, {
+    params,
+  });
+  return response.data;
+}
+
+export async function fetchReel(reelId: string): Promise<ReelDto> {
+  const response = await api.get<ReelDto>(`${SOCIAL_API}/reels/${reelId}`);
+  return response.data;
+}
+
+/** Reports a playback session; the backend only counts views above a threshold. */
+export async function recordReelView(reelId: string, watchedMs: number): Promise<ReelDto> {
+  const response = await api.post<ReelDto>(`${SOCIAL_API}/reels/${reelId}/view`, { watchedMs });
+  return response.data;
+}
+
+export async function deleteReel(reelId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/reels/${reelId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+
+export async function fetchBookmarks(cursor?: string, limit = 15): Promise<CursorPageOf<PostDto>> {
+  const params = { limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<PostDto>>(`${SOCIAL_API}/me/bookmarks`, { params });
+  return response.data;
+}
+
+export async function saveBookmark(postId: string): Promise<void> {
+  await api.put(`${SOCIAL_API}/posts/${postId}/bookmark`);
+}
+
+export async function removeBookmark(postId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/posts/${postId}/bookmark`);
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+export async function searchAll(query: string, limit = 10): Promise<SearchResultDto> {
+  const response = await api.get<SearchResultDto>(`${SOCIAL_API}/search`, {
+    params: { q: query, limit },
+  });
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Relationship: follow / block / mute / friends
+// ---------------------------------------------------------------------------
+
+export async function fetchRelationship(userId: string): Promise<RelationshipDto> {
+  const response = await api.get<RelationshipDto>(`${SOCIAL_API}/users/${userId}/relationship`);
+  return response.data;
+}
+
+export async function followUser(userId: string): Promise<void> {
+  await api.post(`${SOCIAL_API}/users/${userId}/follow`);
+}
+
+export async function unfollowUser(userId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/users/${userId}/follow`);
+}
+
+export async function blockUser(userId: string): Promise<void> {
+  await api.post(`${SOCIAL_API}/users/${userId}/block`);
+}
+
+export async function unblockUser(userId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/users/${userId}/block`);
+}
+
+export async function muteUser(userId: string): Promise<void> {
+  await api.post(`${SOCIAL_API}/users/${userId}/mute`);
+}
+
+export async function unmuteUser(userId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/users/${userId}/mute`);
+}
+
+export async function removeFriend(userId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/friends/${userId}`);
+}
+
+export async function sendFriendRequest(userId: string): Promise<FriendRequestResultDto> {
+  const response = await api.post<FriendRequestResultDto>(`${SOCIAL_API}/friend-requests`, undefined, {
+    params: { userId },
+  });
+  return response.data;
+}
+
+export async function fetchReceivedFriendRequests(): Promise<FriendRequestDto[]> {
+  const response = await api.get<FriendRequestDto[]>(`${SOCIAL_API}/friend-requests/received`);
+  response.data.forEach((request) => primeProfile(request.profile));
+  return response.data;
+}
+
+export async function fetchSentFriendRequests(): Promise<FriendRequestDto[]> {
+  const response = await api.get<FriendRequestDto[]>(`${SOCIAL_API}/friend-requests/sent`);
+  response.data.forEach((request) => primeProfile(request.profile));
+  return response.data;
+}
+
+export async function acceptFriendRequest(requestId: string): Promise<void> {
+  await api.post(`${SOCIAL_API}/friend-requests/${requestId}/accept`);
+}
+
+export async function declineFriendRequest(requestId: string): Promise<void> {
+  await api.post(`${SOCIAL_API}/friend-requests/${requestId}/decline`);
+}
+
+export async function cancelFriendRequest(requestId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/friend-requests/${requestId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Media upload ([stora] 2-step: ticket → PUT → complete)
+// ---------------------------------------------------------------------------
+
+export type UploadKind = 'avatar' | 'cover' | 'images' | 'videos' | 'stories' | 'post';
+
+export async function uploadMedia(file: File, kind: UploadKind): Promise<string> {
+  const ticket = await api.post<UploadTicketDto>(`${SOCIAL_API}/media/uploads`, {
+    contentType: file.type || 'application/octet-stream',
+    sizeBytes: file.size,
+    kind,
+  });
+
+  if (ticket.data.directUpload) {
+    // The ticket is a pre-signed URL: the request must carry no app credentials,
+    // so use a bare axios instance instead of `api` (whose interceptor attaches
+    // our JWT, which storage rejects).
+    await axios.put(ticket.data.uploadUrl, file, {
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    });
+  } else {
+    // This storage provider cannot take a browser upload, so the service
+    // writes the bytes itself.
+    await api.post(`${SOCIAL_API}/media/uploads/${ticket.data.mediaId}/content`, file, {
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    });
+  }
+
+  await api.post(`${SOCIAL_API}/media/uploads/${ticket.data.mediaId}/complete`);
+  return ticket.data.mediaId;
+}
+
+export async function setProfileAvatar(mediaId: string): Promise<ProfileDto> {
+  const response = await api.patch<ProfileDto>(`${SOCIAL_API}/me/profile/avatar`, { mediaId });
+  primeProfile(response.data);
+  return response.data;
+}
+
+export async function setProfileCover(mediaId: string): Promise<ProfileDto> {
+  const response = await api.patch<ProfileDto>(`${SOCIAL_API}/me/profile/cover`, { mediaId });
+  primeProfile(response.data);
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+export async function fetchNotifications(
+  status: 'all' | 'unread' = 'all',
+  limit = 50,
+): Promise<NotificationApiDto[]> {
+  const params = status === 'unread' ? { status: 'unread', limit } : { limit };
+  const response = await api.get<NotificationApiDto[]>(`${NOTIFICATION_API}/notifications`, {
+    params,
+  });
+  return response.data;
+}
+
+export async function markNotificationRead(notificationId: string): Promise<void> {
+  await api.post(`${NOTIFICATION_API}/notifications/${notificationId}/read`);
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  await api.post(`${NOTIFICATION_API}/notifications/read-all`);
+}
+
+// ---------------------------------------------------------------------------
+// Shared unread-notification counter (used by both navbar badge and sidebar)
+// ---------------------------------------------------------------------------
+
+let unreadNotificationCount = 0;
+const unreadListeners = new Set<(count: number) => void>();
+
+export function getUnreadNotificationCount(): number {
+  return unreadNotificationCount;
+}
+
+export function setUnreadNotificationCount(count: number): void {
+  unreadNotificationCount = count;
+  unreadListeners.forEach((listener) => listener(count));
+}
+
+export function subscribeUnreadNotifications(listener: (count: number) => void): () => void {
+  unreadListeners.add(listener);
+  listener(unreadNotificationCount);
+  return () => {
+    unreadListeners.delete(listener);
+  };
+}
+
+export async function refreshUnreadNotificationCount(): Promise<number> {
+  try {
+    const response = await api.get<{ count: number }>(`${NOTIFICATION_API}/notifications/unread-count`);
+    const count = response.data?.count ?? 0;
+    setUnreadNotificationCount(count);
+    return count;
+  } catch {
+    return unreadNotificationCount;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Profile posts (`GET /users/{userId}/posts`)
+// ---------------------------------------------------------------------------
+
+export async function fetchUserPosts(
+  userId: string,
+  cursor?: string,
+  limit = 15,
+): Promise<CursorPageOf<PostDto>> {
+  const params = { limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<PostDto>>(`${SOCIAL_API}/users/${userId}/posts`, {
+    params,
+  });
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Chat (`/chat/api/v1`)
+// ---------------------------------------------------------------------------
+
+export async function fetchConversations(): Promise<ConversationDto[]> {
+  const response = await api.get<ConversationDto[]>(`${CHAT_API}/conversations`);
+  return response.data;
+}
+
+export async function fetchMessages(
+  conversationId: string,
+  cursor?: string,
+  limit = 50,
+): Promise<CursorPageOf<ChatMessageDto>> {
+  const params = { limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<ChatMessageDto>>(
+    `${CHAT_API}/conversations/${conversationId}/messages`,
+    { params },
+  );
+  return response.data;
+}
+
+export async function sendChatMessage(
+  conversationId: string,
+  body: string,
+  replyToMessageId?: string | null,
+  attachments: ChatAttachmentUpload[] = [],
+): Promise<ChatMessageDto> {
+  const response = await api.post<ChatMessageDto>(
+    `${CHAT_API}/conversations/${conversationId}/messages`,
+    { body, attachments, replyToMessageId: replyToMessageId ?? null },
+  );
+  return response.data;
+}
+
+/**
+ * Uploads one file into the conversation and returns the descriptor the send
+ * endpoint expects. The ticket is a pre-signed [stora] URL, so the upload must
+ * go out without the app credentials — a bare axios instance is used for that.
+ */
+export async function uploadChatAttachment(
+  conversationId: string,
+  file: File,
+): Promise<ChatAttachmentUpload> {
+  const contentType = file.type || 'application/octet-stream';
+  const ticket = await api.post<ChatAttachmentUploadTicket>(
+    `${CHAT_API}/conversations/${conversationId}/attachments/ticket`,
+    undefined,
+    { params: { fileName: file.name, contentType } },
+  );
+
+  await axios.put(ticket.data.uploadUrl, file, {
+    headers: { 'Content-Type': contentType },
+  });
+
+  return {
+    fileName: file.name,
+    contentType,
+    sizeBytes: file.size,
+    mediaId: ticket.data.mediaId,
+  };
+}
+
+export async function editChatMessage(messageId: string, body: string): Promise<ChatMessageDto> {
+  const response = await api.patch<ChatMessageDto>(`${CHAT_API}/messages/${messageId}`, { body });
+  return response.data;
+}
+
+/** Recalls a message for everybody: both sides see a "recalled" placeholder. */
+export async function deleteChatMessage(messageId: string): Promise<void> {
+  await api.delete(`${CHAT_API}/messages/${messageId}`);
+}
+
+/** Deletes a message for the viewer only; everybody else keeps seeing it. */
+export async function hideChatMessage(messageId: string): Promise<void> {
+  await api.delete(`${CHAT_API}/messages/${messageId}/hide`);
+}
+
+export async function addChatMessageReaction(
+  messageId: string,
+  reactionType: string,
+): Promise<ChatMessageReactionDto> {
+  const response = await api.put<ChatMessageReactionDto>(
+    `${CHAT_API}/messages/${messageId}/reactions/${encodeURIComponent(reactionType)}`,
+  );
+  return response.data;
+}
+
+export async function removeChatMessageReaction(
+  messageId: string,
+  reactionType: string,
+): Promise<ChatMessageReactionDto> {
+  const response = await api.delete<ChatMessageReactionDto>(
+    `${CHAT_API}/messages/${messageId}/reactions/${encodeURIComponent(reactionType)}`,
+  );
+  return response.data;
+}
+
+export async function createDirectConversation(otherUserId: string): Promise<ConversationDto> {
+  const response = await api.post<ConversationDto>(`${CHAT_API}/conversations`, {
+    type: 'dm',
+    title: null,
+    memberUserIds: [otherUserId],
+  });
+  return response.data;
+}
+
+export async function markConversationRead(conversationId: string): Promise<void> {
+  await api.post(`${CHAT_API}/conversations/${conversationId}/read`);
+}
