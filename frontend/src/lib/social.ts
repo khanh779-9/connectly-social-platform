@@ -471,3 +471,357 @@ export async function fetchProfileByUsername(username: string): Promise<ProfileD
   return response.data;
 }
 
+export async function fetchHashtagFeed(
+  tag: string,
+  cursor?: string,
+  limit = 15,
+): Promise<CursorPageOf<PostDto>> {
+  const params = { limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<PostDto>>(
+    `${SOCIAL_API}/feed/hashtag/${encodeURIComponent(tag)}`,
+    { params },
+  );
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Groups
+// ---------------------------------------------------------------------------
+
+export async function createGroup(input: {
+  name: string;
+  description?: string | null;
+  visibility: 'Public' | 'Private';
+}): Promise<GroupDto> {
+  const response = await api.post<GroupDto>(`${SOCIAL_API}/groups`, input);
+  return response.data;
+}
+
+export async function fetchGroups(cursor?: string, limit = 20): Promise<CursorPageOf<GroupDto>> {
+  const params = { limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<GroupDto>>(`${SOCIAL_API}/groups`, { params });
+  return response.data;
+}
+
+export async function fetchMyGroups(): Promise<GroupDto[]> {
+  const response = await api.get<GroupDto[]>(`${SOCIAL_API}/groups/mine`);
+  return response.data;
+}
+
+export async function fetchGroup(groupId: string): Promise<GroupDto> {
+  const response = await api.get<GroupDto>(`${SOCIAL_API}/groups/${groupId}`);
+  return response.data;
+}
+
+export async function updateGroup(
+  groupId: string,
+  input: { name?: string; description?: string; visibility?: 'Public' | 'Private' },
+): Promise<GroupDto> {
+  const response = await api.patch<GroupDto>(`${SOCIAL_API}/groups/${groupId}`, input);
+  return response.data;
+}
+
+export async function deleteGroup(groupId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/groups/${groupId}`);
+}
+
+export async function joinGroup(groupId: string): Promise<GroupDto> {
+  const response = await api.post<GroupDto>(`${SOCIAL_API}/groups/${groupId}/join`);
+  return response.data;
+}
+
+export async function leaveGroup(groupId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/groups/${groupId}/join`);
+}
+
+export async function fetchGroupMembers(
+  groupId: string,
+  status?: 'active' | 'pending',
+): Promise<GroupMemberDto[]> {
+  const response = await api.get<CursorPageOf<GroupMemberDto>>(
+    `${SOCIAL_API}/groups/${groupId}/members`,
+    { params: { limit: 100, ...(status ? { status } : {}) } },
+  );
+  return response.data.items;
+}
+
+export async function approveGroupMember(groupId: string, userId: string): Promise<void> {
+  await api.post(`${SOCIAL_API}/groups/${groupId}/members/${userId}/approve`);
+}
+
+export async function declineGroupMember(groupId: string, userId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/groups/${groupId}/members/${userId}/request`);
+}
+
+export async function removeGroupMember(groupId: string, userId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/groups/${groupId}/members/${userId}`);
+}
+
+export async function fetchGroupPosts(
+  groupId: string,
+  cursor?: string,
+  limit = 15,
+): Promise<CursorPageOf<PostDto>> {
+  const params = { limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<PostDto>>(`${SOCIAL_API}/groups/${groupId}/posts`, {
+    params,
+  });
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+export async function createEvent(input: {
+  title: string;
+  description?: string | null;
+  locationText?: string | null;
+  onlineUrl?: string | null;
+  startsAt: string;
+  endsAt?: string | null;
+  groupId?: string | null;
+}): Promise<EventDto> {
+  const response = await api.post<EventDto>(`${SOCIAL_API}/events`, input);
+  return response.data;
+}
+
+export async function fetchEvents(cursor?: string, limit = 20): Promise<CursorPageOf<EventDto>> {
+  const params = { limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<EventDto>>(`${SOCIAL_API}/events`, { params });
+  return response.data;
+}
+
+export async function fetchEvent(eventId: string): Promise<EventDto> {
+  const response = await api.get<EventDto>(`${SOCIAL_API}/events/${eventId}`);
+  return response.data;
+}
+
+export async function updateEvent(
+  eventId: string,
+  input: {
+    title?: string;
+    description?: string;
+    locationText?: string;
+    onlineUrl?: string;
+    startsAt?: string;
+    endsAt?: string | null;
+  },
+): Promise<EventDto> {
+  const response = await api.patch<EventDto>(`${SOCIAL_API}/events/${eventId}`, input);
+  return response.data;
+}
+
+export async function deleteEvent(eventId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/events/${eventId}`);
+}
+
+/** rsvp: "going" | "interested" | "notgoing" (notgoing removes the attendee row) */
+export async function setEventRsvp(eventId: string, rsvp: string): Promise<void> {
+  await api.put(`${SOCIAL_API}/events/${eventId}/rsvp`, { rsvp });
+}
+
+export async function fetchEventAttendees(
+  eventId: string,
+  rsvp?: 'going' | 'interested',
+): Promise<EventAttendeeDto[]> {
+  const response = await api.get<CursorPageOf<EventAttendeeDto>>(
+    `${SOCIAL_API}/events/${eventId}/attendees`,
+    { params: { limit: 100, ...(rsvp ? { rsvp } : {}) } },
+  );
+  return response.data.items;
+}
+
+// ---------------------------------------------------------------------------
+// Pages
+// ---------------------------------------------------------------------------
+
+export async function createPage(input: {
+  name: string;
+  description?: string | null;
+  category?: string | null;
+}): Promise<PageDto> {
+  const response = await api.post<PageDto>(`${SOCIAL_API}/pages`, input);
+  return response.data;
+}
+
+export async function fetchPages(cursor?: string, limit = 20): Promise<CursorPageOf<PageDto>> {
+  const params = { limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<PageDto>>(`${SOCIAL_API}/pages`, { params });
+  return response.data;
+}
+
+export async function fetchMyPages(): Promise<PageDto[]> {
+  const response = await api.get<PageDto[]>(`${SOCIAL_API}/pages/mine`);
+  return response.data;
+}
+
+export async function fetchPage(pageId: string): Promise<PageDto> {
+  const response = await api.get<PageDto>(`${SOCIAL_API}/pages/${pageId}`);
+  return response.data;
+}
+
+export async function updatePage(
+  pageId: string,
+  input: { name?: string; description?: string; category?: string },
+): Promise<PageDto> {
+  const response = await api.patch<PageDto>(`${SOCIAL_API}/pages/${pageId}`, input);
+  return response.data;
+}
+
+export async function deletePage(pageId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/pages/${pageId}`);
+}
+
+export async function fetchPageAdmins(pageId: string): Promise<PageAdminDto[]> {
+  const response = await api.get<PageAdminDto[]>(`${SOCIAL_API}/pages/${pageId}/admins`);
+  return response.data;
+}
+
+export async function addPageAdmin(
+  pageId: string,
+  userId: string,
+  role: 'admin' | 'editor' | 'moderator' = 'admin',
+): Promise<PageAdminDto> {
+  const response = await api.post<PageAdminDto>(
+    `${SOCIAL_API}/pages/${pageId}/admins/${userId}`,
+    undefined,
+    { params: { role } },
+  );
+  return response.data;
+}
+
+export async function removePageAdmin(pageId: string, userId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/pages/${pageId}/admins/${userId}`);
+}
+
+export async function fetchPagePosts(
+  pageId: string,
+  cursor?: string,
+  limit = 15,
+): Promise<CursorPageOf<PostDto>> {
+  const params = { limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<PostDto>>(`${SOCIAL_API}/pages/${pageId}/posts`, {
+    params,
+  });
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Stories & Highlights
+// ---------------------------------------------------------------------------
+
+export async function createStory(input: {
+  mediaAssetId: string;
+  caption?: string | null;
+  /** 0=Public, 1=Friends, 2=OnlyMe */
+  visibility?: number;
+}): Promise<StoryDto> {
+  const response = await api.post<StoryDto>(`${SOCIAL_API}/stories`, {
+    mediaAssetId: input.mediaAssetId,
+    caption: input.caption ?? null,
+    visibility: input.visibility ?? 1,
+  });
+  return response.data;
+}
+
+export async function fetchStoryFeed(): Promise<StoryAuthorDto[]> {
+  const response = await api.get<StoryAuthorDto[]>(`${SOCIAL_API}/stories/feed`);
+  return response.data;
+}
+
+export async function fetchStory(storyId: string): Promise<StoryDto> {
+  const response = await api.get<StoryDto>(`${SOCIAL_API}/stories/${storyId}`);
+  return response.data;
+}
+
+/** Marks the story as seen by the viewer (idempotent). */
+export async function viewStory(storyId: string): Promise<StoryDto> {
+  const response = await api.post<StoryDto>(`${SOCIAL_API}/stories/${storyId}/view`);
+  return response.data;
+}
+
+export async function deleteStory(storyId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/stories/${storyId}`);
+}
+
+/** Owner-only: change who can see a story. */
+export async function updateStory(
+  storyId: string,
+  payload: { visibility?: number; caption?: string | null },
+): Promise<StoryDto> {
+  const response = await api.put<StoryDto>(`${SOCIAL_API}/stories/${storyId}`, payload);
+  return response.data;
+}
+
+/** Viewer list of one story — only the author may read it. */
+export async function fetchStoryViews(storyId: string): Promise<StoryViewDto[]> {
+  const response = await api.get<StoryViewDto[]>(`${SOCIAL_API}/stories/${storyId}/views`);
+  return response.data;
+}
+
+export async function createHighlight(title: string): Promise<HighlightDto> {
+  const response = await api.post<HighlightDto>(`${SOCIAL_API}/highlights`, { title });
+  return response.data;
+}
+
+export async function fetchMyHighlights(): Promise<HighlightDto[]> {
+  const response = await api.get<HighlightDto[]>(`${SOCIAL_API}/highlights/mine`);
+  return response.data;
+}
+
+export async function fetchHighlights(ownerUserId: string): Promise<HighlightDto[]> {
+  const response = await api.get<HighlightDto[]>(`${SOCIAL_API}/highlights/${ownerUserId}`);
+  return response.data;
+}
+
+export async function fetchHighlightStories(highlightId: string): Promise<StoryDto[]> {
+  const response = await api.get<StoryDto[]>(`${SOCIAL_API}/highlights/${highlightId}/stories`);
+  return response.data;
+}
+
+/** Archives a story into a highlight (the story leaves the 24h rail). */
+export async function addStoryToHighlight(highlightId: string, storyId: string): Promise<void> {
+  await api.post(`${SOCIAL_API}/highlights/${highlightId}/stories/${storyId}`);
+}
+
+export async function removeStoryFromHighlight(
+  highlightId: string,
+  storyId: string,
+): Promise<void> {
+  await api.delete(`${SOCIAL_API}/highlights/${highlightId}/stories/${storyId}`);
+}
+
+export async function deleteHighlight(highlightId: string): Promise<void> {
+  await api.delete(`${SOCIAL_API}/highlights/${highlightId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Reels
+// ---------------------------------------------------------------------------
+
+export async function createReel(input: {
+  mediaAssetId: string;
+  caption?: string | null;
+  /** 0=Public, 1=Friends, 2=OnlyMe */
+  visibility?: number;
+}): Promise<ReelDto> {
+  const response = await api.post<ReelDto>(`${SOCIAL_API}/reels`, {
+    mediaAssetId: input.mediaAssetId,
+    caption: input.caption ?? null,
+    visibility: input.visibility ?? 0,
+  });
+  return response.data;
+}
+
+/** Reel feed: "foryou" (everything visible) or "following" (people you follow). */
+export async function fetchReels(
+  tab: 'foryou' | 'following' = 'foryou',
+  cursor?: string,
+  limit = 10,
+): Promise<CursorPageOf<ReelDto>> {
+  const params = { tab, limit, ...(cursor ? { cursor } : {}) };
+  const response = await api.get<CursorPageOf<ReelDto>>(`${SOCIAL_API}/reels`, { params });
+  return response.data;
+}
+
