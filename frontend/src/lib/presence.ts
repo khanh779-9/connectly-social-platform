@@ -20,3 +20,10 @@ export async function fetchPresence(userIds: string[]): Promise<Record<string, P
   }
 }
 
+/** "Active now", "Active 3h ago", "Active 2d ago" — null when the user has never been seen. */
+export function presenceLabel(presence?: PresenceDto | null): string | null {
+  if (!presence) return null;
+  if (presence.online) return 'Active now';
+  if (presence.lastSeenAt) return `Active ${timeAgo(presence.lastSeenAt)}`;
+  return null;
+}
