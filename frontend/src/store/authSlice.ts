@@ -89,3 +89,70 @@ export const register = createAsyncThunk<AuthResponse, RegisterRequest, { reject
   },
 );
 
+const authSlice = createSlice({
+  name: 'auth',
+  initialState: initialAuthState(),
+  reducers: {
+    logout: (state) => {
+      clearSession();
+      Object.assign(state, emptyAuthState());
+    },
+    clearError: (state) => {
+      state.error = null;
+    },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(login.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(login.fulfilled, (state, action) => {
+        const rememberMe = action.meta.arg.rememberMe ?? action.payload.rememberMe ?? false;
+        state.status = 'idle';
+        state.token = action.payload.accessToken;
+        state.userId = action.payload.userId;
+        state.displayName = action.payload.displayName;
+        state.refreshToken = action.payload.refreshToken;
+        state.rememberMe = rememberMe;
+        saveSession({
+          accessToken: action.payload.accessToken,
+          refreshToken: action.payload.refreshToken,
+          userId: action.payload.userId,
+          displayName: action.payload.displayName,
+          rememberMe,
+        });
+      })
+      .addCase(login.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload ?? 'Login failed.';
+      })
+      .addCase(register.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(register.fulfilled, (state, action) => {
+        const rememberMe = action.meta.arg.rememberMe ?? action.payload.rememberMe ?? false;
+        state.status = 'idle';
+        state.token = action.payload.accessToken;
+        state.userId = action.payload.userId;
+        state.displayName = action.payload.displayName;
+        state.refreshToken = action.payload.refreshToken;
+        state.rememberMe = rememberMe;
+        saveSession({
+          accessToken: action.payload.accessToken,
+          refreshToken: action.payload.refreshToken,
+          userId: action.payload.userId,
+          displayName: action.payload.displayName,
+          rememberMe,
+        });
+      })
+      .addCase(register.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload ?? 'Registration failed. Please try again.';
+      });
+  },
+});
+
+export const { logout, clearError } = authSlice.actions;
+export default authSlice.reducer;
