@@ -78,3 +78,75 @@ export default function AppSidebar({ className, onNavigate }: AppSidebarProps) {
     }, 220);
   }
 
+  return (
+    <nav
+      className={cn(
+        'flex h-full flex-col overflow-y-auto border-r border-border bg-card px-3 py-4 scroll-quiet',
+        className,
+      )}
+    >
+      {/* Primary action */}
+      <button
+        type="button"
+        onClick={handleCreatePost}
+        className="mb-5 flex h-9 w-full items-center justify-center gap-2 rounded bg-primary text-[13.5px] font-medium text-primary-foreground transition-colors hover:bg-primary-hover"
+      >
+        <PenSquare className="h-4 w-4" />
+        New post
+      </button>
+
+      <p className="px-3 pb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Menu
+      </p>
+      <ul className="flex flex-col gap-0.5">
+        {menuItems.map(({ to, label, icon: Icon, end }) => (
+          <li key={to}>
+            <NavLink to={to} end={end} onClick={onNavigate} className={itemClass(isActive(to))}>
+              <Icon
+                className={cn(
+                  'h-[18px] w-[18px]',
+                  isActive(to) ? 'text-accent' : 'text-muted-foreground',
+                )}
+              />
+              {label}
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+
+      <p className="px-3 pb-1.5 pt-6 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Your space
+      </p>
+      <ul className="flex flex-col gap-0.5">
+        {spaceItems.map(({ to, label, icon: Icon, badge }) => (
+          <li key={to}>
+            <NavLink to={to} onClick={onNavigate} className={itemClass(isActive(to))}>
+              <Icon
+                className={cn(
+                  'h-[18px] w-[18px]',
+                  isActive(to) ? 'text-accent' : 'text-muted-foreground',
+                )}
+              />
+              <span className="flex-1">{label}</span>
+              {badge === 'notifications' && unread > 0 && (
+                <span
+                  className="rounded-full bg-accent px-1.5 py-0.5 text-[12px] font-semibold leading-none text-accent-foreground tnum"
+                  title={`${unread} unread notifications`}
+                >
+                  {unread > 9 ? '9+' : unread}
+                </span>
+              )}
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-auto px-3 pt-8">
+        <p className="text-[12px] font-medium text-foreground">Connectly</p>
+        <p className="mt-0.5 text-[12px] text-muted-foreground">
+          Social platform · {new Date().getFullYear()}
+        </p>
+      </div>
+    </nav>
+  );
+}
