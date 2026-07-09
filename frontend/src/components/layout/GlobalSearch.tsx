@@ -143,3 +143,109 @@ export default function GlobalSearch() {
         className="h-9 w-full rounded-full border border-transparent bg-secondary pl-9 pr-9 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:bg-secondary-hover focus:border-ring focus:bg-card focus:ring-1 focus:ring-ring sm:pl-10 sm:pr-16"
       />
 
+      <div className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+        {query.length > 0 ? (
+          <button
+            type="button"
+            onClick={clear}
+            aria-label="Clear search"
+            className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : (
+          !expanded && (
+            <kbd className="hidden rounded border border-border bg-card px-1.5 py-0.5 text-[12px] font-medium text-muted-foreground lg:inline-block">
+              ⌘K
+            </kbd>
+          )
+        )}
+      </div>
+
+      {open && query.trim().length >= 2 && (
+        <div className="absolute left-0 top-[calc(100%+8px)] z-50 max-h-[70vh] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto rounded border border-border bg-popover p-1.5 shadow-dropdown scroll-quiet">
+          {hasResults ? (
+            <>
+              {result.users.length > 0 && (
+                <section>
+                  <p className="px-2.5 py-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    People
+                  </p>
+                  {result.users.map((person: ProfileDto) => (
+                    <button
+                      key={person.userId}
+                      type="button"
+                      onClick={() => go(`/profile/${person.userId}`)}
+                      className="flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left transition-colors hover:bg-secondary"
+                    >
+                      <Avatar className="h-8 w-8">
+                        {person.avatarUrl ? (
+                          <AvatarImage src={person.avatarUrl} alt={person.displayName} />
+                        ) : null}
+                        <AvatarFallback style={avatarTone(person.userId)}>
+                          {initials(person.displayName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-foreground">
+                          {person.displayName}
+                        </span>
+                        {person.bio && (
+                          <span className="block truncate text-[12px] text-muted-foreground">
+                            {person.bio}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </section>
+              )}
+
+              {result.posts.length > 0 && (
+                <section className={cn(result.users.length > 0 && 'mt-1 border-t border-border pt-1')}>
+                  <p className="px-2.5 py-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Posts
+                  </p>
+                  {result.posts.map((post) => (
+                    <button
+                      key={post.id}
+                      type="button"
+                      onClick={() => go(`/post/${post.id}`)}
+                      className="block w-full rounded px-2.5 py-2 text-left transition-colors hover:bg-secondary"
+                    >
+                      <span className="line-clamp-2 text-[13px] text-foreground">
+                        {post.textContent?.trim() || 'Post with media'}
+                      </span>
+                      <span className="mt-0.5 block text-[12px] text-muted-foreground">
+                        {post.reactionCount} reactions · {post.commentCount} comments
+                      </span>
+                    </button>
+                  ))}
+                </section>
+              )}
+            </>
+          ) : (
+            <p className="px-3 py-6 text-center text-[13px] text-muted-foreground">
+              {loading ? 'Searching…' : `Nothing matches “${query.trim()}”.`}
+            </p>
+          )}
+
+          {result.users.length === 0 && result.posts.length === 0 && otherResultCount > 0 && (
+            <p className="px-2.5 py-2 text-[13px] text-muted-foreground">
+              {otherResultCount} {otherResultCount === 1 ? 'result' : 'results'} in groups, pages,
+              events and hashtags.
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={searchEverything}
+            className="mt-1 w-full rounded px-2.5 py-2 text-left text-[13px] font-medium text-accent transition-colors hover:bg-secondary"
+          >
+            See all results for “{query.trim()}”
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
