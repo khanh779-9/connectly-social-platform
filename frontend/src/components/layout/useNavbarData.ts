@@ -105,3 +105,72 @@ export function useNavbarData(
     return (partner ? chatProfiles[partner]?.displayName : null) ?? 'Conversation';
   }
 
+  function openNotification(notification: NotificationApiDto) {
+    if (notification.status.toLowerCase() === 'unread') {
+      void markNotificationRead(notification.id)
+        .then(() => {
+          setNotifications((current) =>
+            current.map((item) =>
+              item.id === notification.id
+                ? {
+                    ...item,
+                    status: 'read',
+                    readAt: item.readAt ?? new Date().toISOString(),
+                  }
+                : item,
+            ),
+          );
+          return refreshUnreadNotificationCount();
+        })
+        .catch(() => undefined);
+    }
+
+    if (notification.type === 'new_signin') onNavigate('/settings', { section: 'security' });
+    else if (notification.type === 'welcome') onNavigate('/profile');
+    else if (notification.targetPostId) onNavigate(`/post/${notification.targetPostId}`);
+    else onNavigate('/notifications');
+  }
+
+  function handleLogout() {
+    dispatch(logout());
+    onNavigate('/login');
+  }
+
+  function setTheme(mode: ThemeMode) {
+    setThemeMode(mode);
+    setThemePanelOpen(false);
+  }
+
+  return {
+    // Auth
+    displayName,
+    userId,
+
+    // Theme
+    theme,
+    currentTheme,
+    setTheme,
+    themePanelOpen,
+    setThemePanelOpen,
+
+    // Notifications
+    unreadCount,
+    notifications,
+    actors,
+    loadingNotifications,
+    loadNotifications,
+    openNotification,
+
+    // Conversations
+    conversations,
+    chatProfiles,
+    loadingChats,
+    chatUnread,
+    loadChats,
+    chatPartner,
+    chatTitle,
+
+    // Actions
+    handleLogout,
+  };
+}
