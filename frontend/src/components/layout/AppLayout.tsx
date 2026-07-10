@@ -48,3 +48,36 @@ export default function AppLayout() {
         />
       )}
 
+      {/* Docked left rail (desktop) / drawer (mobile) */}
+      <AppSidebar
+        className={cn(
+          'fixed bottom-0 left-0 top-14 z-50 w-[264px] transition-transform duration-200',
+          mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
+          'lg:translate-x-0',
+        )}
+        onNavigate={() => setMobileNavOpen(false)}
+      />
+
+      {/* Content panel — offset by the docked left rail */}
+      <div className="lg:pl-[264px]">
+        <main className="min-w-0 px-4 py-6 lg:px-6">
+          {/* One content width for every page: no per-route special cases, so
+              pages never need to guess how wide they are allowed to be. */}
+          <div className="mx-auto w-full max-w-[1120px] pb-12">
+            <Suspense fallback={<RouteFallback />}>
+              <Outlet />
+            </Suspense>
+          </div>
+        </main>
+      </div>
+
+      {/* Floating chat dock — available on every page except Messages itself */}
+      <Suspense fallback={null}>
+        <ChatDock />
+      </Suspense>
+
+      {/* Global toast notifications */}
+      <ToastContainer position="top-right" />
+    </div>
+  );
+}
