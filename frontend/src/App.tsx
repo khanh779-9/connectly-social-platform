@@ -38,3 +38,47 @@ function RequireAuth() {
   return <Outlet />;
 }
 
+function PublicOnly() {
+  const token = useAppSelector((state) => state.auth.token);
+  if (token) {
+    return <Navigate to="/" replace />;
+  }
+  return <Outlet />;
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<PublicOnly />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+      </Route>
+
+      <Route element={<RequireAuth />}>
+        <Route element={<AppLayout />}>
+          <Route index element={<HomePage />} />
+          <Route path="messages" element={<MessagesPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route path="profile/:userId" element={<ProfilePage />} />
+          <Route path="post/:postId" element={<PostPage />} />
+          <Route path="hashtag/:tag" element={<HashtagPage />} />
+          <Route path="groups" element={<GroupsPage />} />
+          <Route path="groups/:groupId" element={<GroupDetailPage />} />
+          <Route path="events" element={<EventsPage />} />
+          <Route path="pages" element={<PagesPage />} />
+          <Route path="pages/:pageId" element={<PageDetailPage />} />
+          <Route path="reels" element={<ReelsPage />} />
+          <Route path="explore" element={<ExplorePage />} />
+          <Route path="search" element={<SearchPage />} />
+          <Route path="friends" element={<FriendsPage />} />
+          <Route path="bookmarks" element={<BookmarksPage />} />
+          <Route path="memories" element={<MemoriesPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
