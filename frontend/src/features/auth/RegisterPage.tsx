@@ -51,3 +51,54 @@ export default function RegisterPage() {
           <p className="text-[13px] text-muted-foreground">Join Connectly and start connecting.</p>
         </div>
 
+        <form className="space-y-4 rounded border border-border bg-card p-5" onSubmit={handleSubmit}>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-[13px] font-medium text-foreground">Display name</span>
+            <Input id="displayName" type="text" placeholder="Jane Doe" value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)} required autoComplete="name"
+              aria-describedby={message ? 'register-error' : undefined} />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-[13px] font-medium text-foreground">Email</span>
+            <Input id="email" type="email" placeholder="you@example.com" value={email}
+              onChange={(event) => setEmail(event.target.value)} required autoComplete="email"
+              aria-describedby={message ? 'register-error' : undefined} />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-[13px] font-medium text-foreground">Password</span>
+            <PasswordField id="password" value={password}
+              onChange={(event) => setPassword(event.target.value)} required autoComplete="new-password" minLength={8}
+              aria-describedby={message ? 'register-error' : undefined} />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-[13px] font-medium text-foreground">Confirm password</span>
+            <PasswordField id="confirm" value={confirm}
+              onChange={(event) => setConfirm(event.target.value)} required autoComplete="new-password"
+              aria-describedby={message ? 'register-error' : undefined} />
+          </label>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Checkbox id="rememberMe" checked={rememberMe}
+              onChange={(event) => setRememberMe(event.currentTarget.checked)} />
+            <span className="text-muted-foreground">Remember me</span>
+          </label>
+
+          {message && (
+            <Card id="register-error" className="rounded bg-destructive-soft px-3 py-2 text-[13px] text-destructive" role="alert">
+              {message}
+            </Card>
+          )}
+
+          <Button type="submit" variant="primary" className="w-full"
+            disabled={status === 'loading' || !displayName || !email || password !== confirm || password.length < 8}>
+            {status === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create account'}
+          </Button>
+        </form>
+
+        <p className="mt-5 text-center text-[13px] text-muted-foreground">
+          Already have an account?{' '}
+          <Link to="/login" className="font-medium text-accent hover:underline">Sign in</Link>
+        </p>
+      </div>
+    </div>
+  );
+}
