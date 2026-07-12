@@ -55,3 +55,35 @@ export default function LoginPage() {
               aria-describedby={error ? 'login-error' : undefined} />
           </label>
 
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-[13px] font-medium text-foreground">Password</span>
+            <PasswordField id="password" value={password}
+              onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password"
+              aria-describedby={error ? 'login-error' : undefined} />
+          </label>
+
+          <label className="flex items-center gap-2 text-[13px]">
+            <Checkbox id="rememberMe" checked={rememberMe}
+              onChange={(event) => setRememberMe(event.currentTarget.checked)} />
+            <span className="text-muted-foreground">Remember me</span>
+          </label>
+
+          {error && (
+            <Card id="login-error" className="rounded bg-destructive-soft px-3 py-2 text-[13px] text-destructive" role="alert">
+              {error}
+            </Card>
+          )}
+
+          <Button type="submit" variant="primary" className="w-full" disabled={status === 'loading'}>
+            {status === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Sign in'}
+          </Button>
+        </form>
+
+        <p className="mt-5 text-center text-[13px] text-muted-foreground">
+          Don&apos;t have an account?{' '}
+          <Link to="/register" className="font-medium text-accent hover:underline">Create one</Link>
+        </p>
+      </div>
+    </div>
+  );
+}
