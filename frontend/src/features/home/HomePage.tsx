@@ -190,3 +190,167 @@ export default function HomePage() {
     }
   }
 
+  async function handleToggleBookmark(post: PostDto, saved: boolean) {
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      if (saved) next.delete(post.id);
+      else next.add(post.id);
+      return next;
+    });
+
+    try {
+      if (saved) await removeBookmark(post.id);
+      else await saveBookmark(post.id);
+    } catch {
+      setSavedIds((prev) => {
+        const next = new Set(prev);
+        if (saved) next.add(post.id);
+        else next.delete(post.id);
+        return next;
+      });
+    }
+  }
+
+  function handleProfilesResolved(resolved: Record<string, ProfileDto | null>) {
+    setAuthors((prev) => ({ ...prev, ...resolved }));
+  }
+
+  function renderPost(item: FeedItemDto) {
+    return (
+      <PostCard
+        post={item.post}
+        author={authors[item.post.authorUserId] ?? null}
+        viewerReaction={viewerReactionFrom(reactions, item.post)}
+        onReact={handleReact}
+        bookmarked={savedIds.has(item.post.id)}
+        onToggleBookmark={handleToggleBookmark}
+        onProfilesResolved={handleProfilesResolved}
+      />
+    );
+  }
+
+  const loadingMore = feedStatus === 'loading' && items.length > 0;
+  const hasErrorAccount = feedStatus === 'error' && items.length === 0;
+
+  return (
+    <div className="min-w-0">
+      {/* Center: composer + feed */}
+      <div className="min-w-0 space-y-4">
+        <header className="pb-1">
+          <h1 className="text-[24px] font-semibold leading-tight tracking-tight text-foreground">
+            Home
+          </h1>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
+            Posts from you, your friends and the people you follow.
+          </p>
+        </header>
+
+        <StoryRail
+          viewerId={userId}
+          refreshKey={storyRefresh}
+          viewedStoryIds={viewedStoryIds}
+          onOpenAuthor={setStoryAuthor}
+          onCreate={() => setStoryCreating(true)}
+        />
+
+        <Composer
+          me={me}
+          busy={posting}
+          error={postError}
+          onPost={handlePost}
+          onError={setPostError}
+          defaultVisibility={defaultVisibility}
+        />
+
+        {hasErrorAccount && (
+          <Card className="rounded border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Could not load your feed</p>
+            <p className="mt-1">{feedError}</p>
+            <Button variant="ghost" className="mt-4" onClick={() => loadFeed(true)}>
+              Try again
+            </Button>
+          </Card>
+        )}
+
+        <div className="space-y-4" style={{ minHeight: 100 }}>
+          <VirtualizedFeed<FeedItemDto>
+            items={items}
+            estimateSize={500}
+            overscan={3}
+            loading={feedStatus === 'loading' && items.length === 0}
+            skeletonCount={2}
+            emptyMessage="No posts yet. Follow some people or create a post!"
+            renderItem={renderPost}
+            loadMore={() => loadFeed(false, nextCursor ?? undefined)}
+            hasMore={feedStatus !== 'error' && !!nextCursor}
+            loadingMore={loadingMore}
+          />
+        </div>
+
+        {feedStatus === 'ready' && !nextCursor && items.length > 0 && (
+          <p className="py-2 text-center text-sm text-muted-foreground">
+            You are all caught up.
+          </p>
+        )}
+      </div>
+
+      {/* Stories */}
+      {storyAuthor && (
+        <StoryViewer
+          stories={storyAuthor.stories}
+          authorUserId={storyAuthor.userId}
+          onClose={() => setStoryAuthor(null)}
+          onViewed={(storyId) => {
+            setViewedStoryIds((prev) =>
+              prev.includes(storyId) ? prev : [...prev, storyId],
+            );
+            setStoryAuthor((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    stories: prev.stories.map((story) =>
+                      story.id === storyId ? { ...story, viewerViewed: true } : story,
+                    ),
+                    hasUnviewed: prev.stories.some(
+                      (story) => story.id !== storyId && !story.viewerViewed,
+                    ),
+                  }
+                : prev,
+            );
+          }}
+          onArchive={storyAuthor.userId === userId ? setArchivingStoryId : undefined}
+          onDelete={storyAuthor.userId === userId ? handleDeleteStory : undefined}
+        />
+      )}
+
+      {storyCreating && (
+        <CreateStoryDialog
+          onClose={() => setStoryCreating(false)}
+          onCreated={() => {
+            setStoryCreating(false);
+            setStoryRefresh((prev) => prev + 1);
+          }}
+        />
+      )}
+
+      {archivingStoryId && (
+        <StoryArchiveMenu
+          storyId={archivingStoryId}
+          onClose={() => setArchivingStoryId(null)}
+          onArchived={() => {
+            setArchivingStoryId(null);
+            setStoryAuthor((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    stories: prev.stories.filter((story) => story.id !== archivingStoryId),
+                  }
+                : prev,
+            );
+            setStoryRefresh((prev) => prev + 1);
+          }}
+        />
+      )}
+    </div>
+  );
+}
