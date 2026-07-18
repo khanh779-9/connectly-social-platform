@@ -159,3 +159,145 @@ function PostCard({
   async function handlePollVote(optionId: string) {
     if (!poll || votingPoll) return;
 
+    // A poll with one choice replaces the old vote, a poll with several adds to it.
+    const selected = poll.options.filter((option) => option.viewerVoted).map((option) => option.id);
+    let next: string[];
+    if (poll.allowMultiple) {
+      next = selected.includes(optionId)
+        ? selected.filter((id) => id !== optionId)
+        : [...selected, optionId];
+    } else {
+      next = selected.includes(optionId) ? [] : [optionId];
+    }
+
+    const previous = pollOverride;
+    setPollOverride(applyVote(poll, next));
+    setVotingPoll(true);
+    try {
+      const updated = await votePoll(post.id, next);
+      setPollOverride(updated);
+    } catch {
+      setPollOverride(previous);
+    } finally {
+      setVotingPoll(false);
+    }
+  }
+
+  function onVideoError(mediaId: string) {
+    setFailedVideos((current) => ({ ...current, [mediaId]: true }));
+  }
+
+  if (removed) return null;
+
+  return (
+    <article className="rounded border border-border bg-card">
+      <div className="p-4 sm:p-5">
+        <PostHeader
+          post={post}
+          author={author}
+          postEditedAt={postEditedAt}
+          isMine={isMine}
+          canChangeVisibility={canChangeVisibility}
+          visibility={visibility}
+          onChangeVisibility={changeVisibility}
+          onCopyLink={() => copyLink(post.id)}
+          onShareToFeed={shareToFeed}
+          onOpenShareDialog={() => setShareDialogOpen(true)}
+          onEditPost={() => {
+            setPostDraft(postText);
+            setPostEditing(true);
+          }}
+          onDeletePost={() => setConfirmDelete(true)}
+          onOpenPostHistory={() => setPostHistoryOpen(true)}
+          confirmDelete={confirmDelete}
+          onConfirmDelete={confirmDeletePost}
+          onCancelDelete={() => setConfirmDelete(false)}
+          deleting={deleting}
+          actionError={actionError}
+        />
+
+        <PostContent
+          post={post}
+          postText={postText}
+          postEditing={postEditing}
+          postDraft={postDraft}
+          savingPost={savingPost}
+          onPostDraftChange={setPostDraft}
+          onSavePostEdit={savePostEdit}
+          onCancelPostEdit={() => {
+            setPostDraft(postText);
+            setPostEditing(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setPostEditing(false);
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) savePostEdit();
+          }}
+        />
+
+        <PostMedia
+          post={post}
+          threadMode={threadMode}
+          onOpenThread={() => setThreadOpen(true)}
+          failedVideos={failedVideos}
+          onVideoError={onVideoError}
+        />
+
+        <PostPoll poll={poll} votingPoll={votingPoll} onVote={handlePollVote} />
+
+        <PostReactions
+          post={post}
+          activeReaction={activeReaction}
+          serverReaction={serverReaction}
+          reactionCount={reactionCount}
+          topReactions={topReactions}
+          onReact={onReact}
+          onOpenBreakdown={() => setBreakdownOpen(true)}
+        />
+
+        <PostActions
+          post={post}
+          commentCount={post.commentCount ?? 0}
+          shareCount={post.shareCount ?? 0}
+          isSaved={isSaved}
+          onToggleBookmark={(target, saved) => onToggleBookmark?.(target, saved)}
+          onOpenThread={() => setThreadOpen(true)}
+          onOpenShareDialog={() => setShareDialogOpen(true)}
+        />
+
+        <CommentThread
+          post={post}
+          commentsOpen={commentsOpen}
+          onToggleComments={() => setCommentsOpen((open) => !open)}
+          threadMode={threadMode}
+          meId={meId}
+          postAuthorId={post.authorUserId}
+          viewerReaction={activeReaction}
+          onProfilesResolved={onProfilesResolved}
+          onShowEditHistory={setCommentHistoryId}
+        />
+      </div>
+
+      {breakdownOpen && <ReactionBreakdown post={post} onClose={() => setBreakdownOpen(false)} />}
+
+      {shareDialogOpen && (
+        <ShareDialog post={post} viewerId={meId} onClose={() => setShareDialogOpen(false)} />
+      )}
+
+      {threadOpen && <PostDialog postId={post.id} onClose={() => setThreadOpen(false)} />}
+
+      {postHistoryOpen && (
+        <EditHistoryDialog kind="post" contentId={post.id} onClose={() => setPostHistoryOpen(false)} />
+      )}
+
+      {commentHistoryId && (
+        <EditHistoryDialog
+          kind="comment"
+          contentId={commentHistoryId}
+          onClose={() => setCommentHistoryId(null)}
+        />
+      )}
+    </article>
+  );
+}
+
+export default PostCard;
