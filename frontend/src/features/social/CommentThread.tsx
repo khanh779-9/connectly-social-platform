@@ -196,3 +196,151 @@ export function CommentThread({
         <p className="text-[13px] text-muted-foreground">No comments yet.</p>
       )}
 
+      {/* Comment composer */}
+      <div className="flex items-center gap-2 pt-2">
+        <Avatar className="h-8 w-8">
+          <AvatarFallback style={avatarTone(meId ?? postAuthorId)}>
+            {initials('You')}
+          </AvatarFallback>
+        </Avatar>
+        <MentionInput
+          value={draft}
+          onChange={setDraft}
+          onSubmit={handleSendComment}
+          placeholder="Write a comment"
+          ariaLabel="Write a comment"
+        />
+        <Button
+          size="icon"
+          aria-label="Send comment"
+          disabled={!draft.trim() || sending}
+          onClick={handleSendComment}
+        >
+          <Send className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CommentThreadItem({
+  comment,
+  replies,
+  meId,
+  postAuthorId,
+  onToggleReaction,
+  onReply,
+  replying,
+  replyDraft,
+  onReplyDraftChange,
+  onSendReply,
+  replySending,
+  onCancelReply,
+  canDeleteAny,
+  onEdit,
+  editingId,
+  editDraft,
+  onEditDraftChange,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
+  onShowEditHistory,
+  commentOverrides,
+  setCommentOverrides,
+}: {
+  comment: CommentDto;
+  replies: CommentDto[];
+  meId: string | null;
+  postAuthorId: string;
+  onToggleReaction: (comment: CommentDto) => void;
+  onReply: (comment: CommentDto) => void;
+  replying: boolean;
+  replyDraft: string;
+  onReplyDraftChange: (value: string) => void;
+  onSendReply: () => void;
+  replySending: boolean;
+  onCancelReply: () => void;
+  canDeleteAny: boolean;
+  onEdit: (comment: CommentDto) => void;
+  editingId: string | null;
+  editDraft: string;
+  onEditDraftChange: (value: string) => void;
+  onSaveEdit: (comment: CommentDto) => void;
+  onCancelEdit: () => void;
+  onDelete: (comment: CommentDto) => void;
+  onShowEditHistory: (commentId: string) => void;
+  commentOverrides: Record<string, { count: number; viewer: string | null }>;
+  setCommentOverrides: React.Dispatch<React.SetStateAction<Record<string, { count: number; viewer: string | null }>>>;
+}) {
+  const profile = cachedProfile(comment.authorUserId);
+  const stat = getCommentStat(comment, commentOverrides);
+  const editing = editingId === comment.id;
+
+  return (
+    <div className="space-y-1">
+      <CommentRow
+        comment={comment}
+        profile={profile}
+        stat={stat}
+        editing={editing}
+        editDraft={editDraft}
+        isReply={false}
+        onToggleReaction={onToggleReaction}
+        onReply={onReply}
+        onEdit={onEdit}
+        onSaveEdit={onSaveEdit}
+        onCancelEdit={onCancelEdit}
+        onDelete={onDelete}
+        onShowEditHistory={onShowEditHistory}
+        meId={meId}
+        canDeleteAny={canDeleteAny}
+        onEditDraftChange={onEditDraftChange}
+      />
+
+      {replies.map((reply) => (
+        <CommentRow
+          key={reply.id}
+          comment={reply}
+          profile={cachedProfile(reply.authorUserId)}
+          stat={getCommentStat(reply, commentOverrides)}
+          editing={editingId === reply.id}
+          editDraft={editDraft}
+          isReply={true}
+          onToggleReaction={onToggleReaction}
+          onReply={onReply}
+          onEdit={onEdit}
+          onSaveEdit={onSaveEdit}
+          onCancelEdit={onCancelEdit}
+          onDelete={onDelete}
+          onShowEditHistory={onShowEditHistory}
+          meId={meId}
+          canDeleteAny={canDeleteAny}
+          onEditDraftChange={onEditDraftChange}
+        />
+      ))}
+
+      {replying && !editing && (
+        <div className="ml-11 flex items-center gap-2 pt-1">
+          <MentionInput
+            autoFocus
+            value={replyDraft}
+            onChange={onReplyDraftChange}
+            onSubmit={onSendReply}
+            onCancel={onCancelReply}
+            placeholder={`Reply to ${profile?.displayName ?? 'this comment'}`}
+            ariaLabel="Write a reply"
+            className="h-8 text-[13px]"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!replyDraft.trim() || replySending}
+            onClick={onSendReply}
+          >
+            Reply
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
