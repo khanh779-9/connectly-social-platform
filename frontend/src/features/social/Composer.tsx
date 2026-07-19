@@ -269,3 +269,242 @@ export default function Composer({
           </AvatarFallback>
         </Avatar>
 
+        <div className="min-w-0 flex-1">
+          <div className="relative">
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(event) => {
+                const newContent = event.target.value;
+                // Allow typing over limit but prevent submission
+                if (newContent.length <= maxLength) {
+                  setContent(newContent);
+                }
+                setMentionQuery(activeMentionQuery(newContent, event.target.selectionStart ?? 0));
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="What's on your mind?"
+              rows={2}
+              style={{ height, minHeight: '56px' }}
+              className="w-full resize-none rounded bg-transparent px-0 py-1 text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground transition-colors"
+              aria-describedby={error ? 'composer-error' : 'composer-char-count'}
+              maxLength={maxLength}
+            />
+            {/* Character counter - appears on focus or when near limit */}
+            <div
+              id="composer-char-count"
+              className={cn(
+                'absolute bottom-1 right-2 text-[12px] font-medium transition-opacity duration-150',
+                isOverLimit ? 'text-destructive' : isNearLimit ? 'text-warning' : 'text-muted-foreground/60',
+              )}
+              aria-live="polite"
+            >
+              {charCount} / {maxLength}
+            </div>
+          </div>
+
+          {/* Mention autocomplete */}
+          {mentionQuery !== null && mentionResults.length > 0 && (
+            <div className="mt-2 overflow-hidden rounded border border-border bg-card shadow-sm">
+              {mentionResults.map((profile, index) => (
+                <button
+                  key={profile.userId}
+                  type="button"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    applyMention(profile);
+                  }}
+                  onMouseEnter={() => setMentionIndex(index)}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
+                    index === mentionIndex ? 'bg-secondary' : 'hover:bg-secondary',
+                  )}
+                >
+                  <Avatar className="h-7 w-7">
+                    {profile.avatarUrl ? (
+                      <AvatarImage src={profile.avatarUrl} alt={profile.displayName} />
+                    ) : null}
+                    <AvatarFallback style={avatarTone(profile.userId)}>
+                      {initials(profile.displayName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px] font-medium text-foreground">
+                      {profile.displayName}
+                    </span>
+                    <span className="block truncate text-[12px] text-muted-foreground">
+                      @{profile.username ?? ''}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {previews.length > 0 && (
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+              {previews.map((url, index) => (
+                <div key={url} className="relative overflow-hidden rounded border border-border">
+                  <img src={url} alt="" className="h-28 w-full object-cover" decoding="async" />
+                  <button
+                    type="button"
+                    aria-label="Remove image"
+                    onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))}
+                    className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white transition-colors hover:bg-black/80"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {/* Add more images placeholder when less than max */}
+              {files.length < 4 && (
+                <label
+                  htmlFor={IMAGE_INPUT_ID}
+                  className="flex h-28 w-full items-center justify-center rounded border-2 border-dashed border-border transition-colors hover:border-accent hover:bg-accent-soft cursor-pointer"
+                >
+                  <span className="text-muted-foreground/60">+</span>
+                </label>
+              )}
+            </div>
+          )}
+
+          {pollOpen && (
+            <div className="mt-3 space-y-2 rounded border border-border p-3">
+              <input
+                type="text"
+                value={pollQuestion}
+                onChange={(event) => setPollQuestion(event.target.value)}
+                maxLength={300}
+                placeholder="Poll question"
+                aria-label="Poll question"
+                className="h-9 w-full rounded border border-input bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+              />
+              {pollOptions.map((option, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={option}
+                    onChange={(event) =>
+                      setPollOptions((prev) =>
+                        prev.map((item, i) => (i === index ? event.target.value : item)),
+                      )
+                    }
+                    maxLength={140}
+                    placeholder={`Option ${index + 1}`}
+                    aria-label={`Poll option ${index + 1}`}
+                    className="h-9 flex-1 rounded border border-input bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+                  />
+                  {pollOptions.length > 2 && (
+                    <button
+                      type="button"
+                      aria-label="Remove option"
+                      onClick={() =>
+                        setPollOptions((prev) => prev.filter((_, i) => i !== index))
+                      }
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {pollOptions.length < 6 && (
+                <button
+                  type="button"
+                  onClick={() => setPollOptions((prev) => [...prev, ''])}
+                  className="inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add option
+                </button>
+              )}
+              <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={allowMultiple}
+                  onChange={(event) => setAllowMultiple(event.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-input accent-[var(--accent)]"
+                />
+                Allow multiple answers
+              </label>
+            </div>
+          )}
+
+          {/*
+            The picker has to live outside the preview block: the "Add images"
+            button is what opens it, so it cannot wait for a preview to exist.
+          */}
+          <input
+            ref={inputRef}
+            id={IMAGE_INPUT_ID}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              const picked = Array.from(event.target.files ?? []);
+              if (picked.length > 0) setFiles((prev) => [...prev, ...picked.slice(0, 4 - prev.length)]);
+              event.target.value = '';
+            }}
+          />
+
+          <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Add images"
+              onClick={() => inputRef.current?.click()}
+            >
+              <ImageIcon className="h-[18px] w-[18px]" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Add poll"
+              aria-pressed={pollOpen}
+              className={pollOpen ? 'text-accent' : undefined}
+              onClick={() => (pollOpen ? resetPoll() : setPollOpen(true))}
+            >
+              <BarChart3 className="h-[18px] w-[18px]" />
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  {visibilityLabel}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {VISIBILITIES.map((item) => (
+                  <DropdownMenuItem
+                    key={item.value}
+                    onSelect={() => setVisibility(item.value)}
+                    className={item.value === visibility ? 'bg-secondary' : undefined}
+                  >
+                    {item.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              variant="primary"
+              size="sm"
+              className="ml-auto"
+              disabled={
+                (!content.trim() && files.length === 0 && !pollReady) || busy || uploading || isOverLimit
+              }
+              onClick={files.length > 0 ? publish : handleSubmit}
+            >
+              {(busy || uploading) && <Loader2 className="h-4 w-4 animate-spin" />}
+              Post
+            </Button>
+          </div>
+
+          {error && <p id="composer-error" className="mt-2 text-[12px] text-destructive" role="alert">{error}</p>}
+        </div>
+      </div>
+    </Card>
+  );
+}
