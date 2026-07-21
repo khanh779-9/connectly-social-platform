@@ -91,3 +91,68 @@ export default function PostDialog({
     }
   }
 
+  return (
+    <Overlay
+      className="fixed inset-0 z-[55] flex items-stretch justify-center bg-black/45 sm:items-center sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={containerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="post-dialog-title"
+        className="flex h-full w-full flex-col overflow-hidden bg-card sm:h-auto sm:max-h-[90vh] sm:max-w-[740px] sm:rounded sm:border sm:border-border"
+      >
+        <header className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2.5">
+          <h2 id="post-dialog-title" className="text-[15px] font-semibold text-foreground">
+            Post
+          </h2>
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            aria-label="Close post"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 scroll-quiet sm:p-4">
+          {status === 'loading' && (
+            <div className="flex justify-center py-16 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          )}
+
+          {status === 'error' && (
+            <div className="px-2 py-10 text-center text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Could not load this post</p>
+              <p className="mt-1">{error}</p>
+              <Button variant="ghost" className="mt-4" onClick={load}>
+                Try again
+              </Button>
+            </div>
+          )}
+
+          {status === 'ready' && post && (
+            <PostCard
+              post={post}
+              author={author}
+              viewerReaction={myReaction}
+              onReact={handleReact}
+              bookmarked={saved}
+              onToggleBookmark={handleToggleBookmark}
+              onProfilesResolved={() => undefined}
+              threadMode="inline"
+              defaultCommentsOpen
+              onDeleted={onClose}
+            />
+          )}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
