@@ -210,3 +210,141 @@ export default function ExplorePage() {
             </ul>
           )}
 
+          {results.posts.length > 0 && (
+            <ul className="divide-y divide-border">
+              {results.posts.map((post) => (
+                <li key={post.id} className="px-5 py-3">
+                  <Link to={`/post/${post.id}`} className="block">
+                    <p className="line-clamp-2 text-sm text-foreground">
+                      {post.textContent?.trim() || 'Post with media'}
+                    </p>
+                    <p className="mt-1 text-[12px] text-muted-foreground">
+                      {post.reactionCount} reactions · {post.commentCount} comments ·{' '}
+                      {timeAgo(post.createdAt)}
+                    </p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {results.users.length === 0 && results.posts.length === 0 && (
+            <p className="px-5 py-8 text-center text-sm text-muted-foreground">
+              Nothing matches “{query.trim()}”.
+            </p>
+          )}
+        </Card>
+      )}
+
+      {/* Suggested people */}
+      {!isSearching && suggested.length > 0 && (
+        <section>
+          <h2 className="pb-2 text-[15px] font-semibold text-foreground">People you may know</h2>
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {suggested.map((person) => (
+              <li key={person.userId} className="rounded border border-border bg-card p-4">
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10">
+                    {person.avatarUrl ? (
+                      <AvatarImage src={person.avatarUrl} alt={person.displayName} />
+                    ) : null}
+                    <AvatarFallback style={avatarTone(person.userId)}>
+                      {initials(person.displayName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <Link to={`/profile/${person.userId}`}>
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {person.displayName}
+                      </p>
+                    </Link>
+                    <p className="truncate text-[12px] text-muted-foreground">
+                      {person.bio ?? person.locationText ?? 'New on Connectly'}
+                    </p>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={requested.has(person.userId)}
+                    onClick={() => handleAdd(person)}
+                  >
+                    {requested.has(person.userId) ? (
+                      'Requested'
+                    ) : (
+                      <>
+                        <UserPlus className="h-4 w-4" />
+                        Add
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Photo grid */}
+      {!isSearching && (
+        <section>
+          <h2 className="pb-2 text-[15px] font-semibold text-foreground">Recent photos</h2>
+
+          {status === 'loading' && (
+            <div className="flex justify-center py-16 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          )}
+
+          {status === 'error' && (
+            <Card className="rounded border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Could not load explore content</p>
+              <p className="mt-1">{error}</p>
+            </Card>
+          )}
+
+          {status === 'ready' && mediaPosts.length > 0 && (
+            <div className="columns-2 gap-3 sm:columns-3 [&>*]:mb-3">
+              {mediaPosts.map((post) => {
+                const author = authors[post.authorUserId];
+                return (
+                  <figure key={post.id} className="overflow-hidden rounded border border-border bg-card">
+                    <Link to={`/post/${post.id}`}>
+                      <SafeImage
+                        src={post.media[0].url}
+                        alt={post.textContent ?? 'Post image'}
+                        loading="lazy"
+                        className="w-full object-cover"
+                        fallbackClassName="min-h-40"
+                      />
+                    </Link>
+                    <figcaption className="px-3 py-2">
+                      <p className="truncate text-[13px] font-medium text-foreground">
+                        {author?.displayName ?? 'Unknown'}
+                      </p>
+                      {post.textContent && (
+                        <p className="mt-0.5 line-clamp-2 text-[12px] text-muted-foreground">
+                          {post.textContent}
+                        </p>
+                      )}
+                      <p className="mt-1 text-[12px] text-muted-foreground">
+                        {timeAgo(post.createdAt)}
+                      </p>
+                    </figcaption>
+                  </figure>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Kept outside the columns container, otherwise it becomes one narrow column. */}
+          {status === 'ready' && mediaPosts.length === 0 && (
+            <Card className="rounded border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+              No photo posts yet. Share an image on your profile to fill this grid.
+            </Card>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
