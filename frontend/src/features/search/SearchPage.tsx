@@ -206,3 +206,143 @@ export default function SearchPage() {
             </Card>
           )}
 
+          {show('people') && users.length > 0 && (
+            <ResultBlock title="People" icon={<Users className="h-4 w-4" />}>
+              {users.map((person) => (
+                <Link
+                  key={person.userId}
+                  to={`/profile/${person.userId}`}
+                  className="flex items-center gap-3 rounded px-3 py-2 transition-colors hover:bg-secondary"
+                >
+                  <Avatar className="h-9 w-9">
+                    {person.avatarUrl ? (
+                      <AvatarImage src={person.avatarUrl} alt={person.displayName} />
+                    ) : null}
+                    <AvatarFallback style={avatarTone(person.userId)}>
+                      {initials(person.displayName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px] font-medium text-foreground">
+                      {person.displayName}
+                    </span>
+                    <span className="block truncate text-[12px] text-muted-foreground">
+                      {person.username ? `@${person.username}` : (person.bio ?? 'Profile')}
+                    </span>
+                  </span>
+                </Link>
+              ))}
+            </ResultBlock>
+          )}
+
+          {show('posts') && posts.length > 0 && (
+            <ResultBlock title="Posts">
+              <div style={{ minHeight: 300 }}>
+                <VirtualizedFeed<PostDto>
+                  items={posts}
+                  estimateSize={120}
+                  overscan={3}
+                  loading={false}
+                  renderItem={renderPost}
+                />
+              </div>
+            </ResultBlock>
+          )}
+
+          {show('hashtags') && tags.length > 0 && (
+            <ResultBlock title="Hashtags" icon={<Hash className="h-4 w-4" />}>
+              <div className="flex flex-wrap gap-1.5 px-3 py-2">
+                {tags.map((tag) => (
+                  <Link
+                    key={tag}
+                    to={`/hashtag/${encodeURIComponent(tag)}`}
+                    className="rounded-full border border-border px-3 py-1 text-[12px] text-foreground transition-colors hover:bg-secondary"
+                  >
+                    #{tag}
+                  </Link>
+                ))}
+              </div>
+            </ResultBlock>
+          )}
+
+          {show('groups') && groups.length > 0 && (
+            <ResultBlock title="Groups">
+              {groups.map((group) => (
+                <Link
+                  key={group.id}
+                  to={`/groups/${group.id}`}
+                  className="block rounded px-3 py-2 transition-colors hover:bg-secondary"
+                >
+                  <span className="block text-[13px] font-medium text-foreground">
+                    {group.name}
+                  </span>
+                  <span className="block truncate text-[12px] text-muted-foreground">
+                    {group.visibility} · {group.memberCount} members
+                  </span>
+                </Link>
+              ))}
+            </ResultBlock>
+          )}
+
+          {show('pages') && pages.length > 0 && (
+            <ResultBlock title="Pages">
+              {pages.map((page) => (
+                <Link
+                  key={page.id}
+                  to={`/pages/${page.id}`}
+                  className="block rounded px-3 py-2 transition-colors hover:bg-secondary"
+                >
+                  <span className="block text-[13px] font-medium text-foreground">{page.name}</span>
+                  <span className="block truncate text-[12px] text-muted-foreground">
+                    {page.category ?? 'Page'} · {page.postCount} posts
+                  </span>
+                </Link>
+              ))}
+            </ResultBlock>
+          )}
+
+          {show('events') && events.length > 0 && (
+            <ResultBlock title="Events" icon={<CalendarDays className="h-4 w-4" />}>
+              {events.map((event) => (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => navigate('/events')}
+                  className="block w-full rounded px-3 py-2 text-left transition-colors hover:bg-secondary"
+                >
+                  <span className="block text-[13px] font-medium text-foreground">
+                    {event.title}
+                  </span>
+                  <span className="block truncate text-[12px] text-muted-foreground">
+                    {new Date(event.startsAt).toLocaleString()}
+                    {event.locationText ? ` · ${event.locationText}` : ''}
+                  </span>
+                </button>
+              ))}
+            </ResultBlock>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResultBlock({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="overflow-hidden rounded border border-border bg-card py-1.5">
+      <h2 className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {icon}
+        {title}
+      </h2>
+      {children}
+    </Card>
+  );
+}
