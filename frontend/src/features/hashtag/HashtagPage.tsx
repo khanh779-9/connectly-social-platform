@@ -92,3 +92,60 @@ export default function HashtagPage() {
     );
   }
 
+  return (
+    <div className="mx-auto space-y-5">
+      <header>
+        <h1 className="text-xl font-semibold text-foreground">#{normalized}</h1>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">
+          Posts with this hashtag from people in your network
+        </p>
+      </header>
+
+      {status === 'loading' && (
+        <div className="flex justify-center py-16 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      )}
+
+      {status === 'error' && (
+        <Card className="rounded border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Could not load this hashtag</p>
+          <p className="mt-1">{error}</p>
+          <Button variant="ghost" className="mt-4" onClick={() => load()}>
+            Try again
+          </Button>
+        </Card>
+      )}
+
+      {status === 'ready' && posts.length === 0 && (
+        <Card className="rounded border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+          No posts with this hashtag in your network yet.
+        </Card>
+      )}
+
+      {posts.map((post) => (
+        <PostCard
+          key={post.id}
+          post={post}
+          author={authors[post.authorUserId] ?? null}
+          viewerReaction={viewerReactionFrom(reactions, post)}
+          onReact={handleReact}
+        />
+      ))}
+
+      {loadingMore && (
+        <div className="flex justify-center py-8 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      )}
+
+      {nextCursor && (
+        <div className="flex justify-center">
+          <Button variant="ghost" disabled={loadingMore} onClick={() => load(nextCursor ?? undefined)}>
+            Load more posts
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
