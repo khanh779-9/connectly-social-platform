@@ -565,3 +565,424 @@ export default function ProfilePage() {
   ];
   const photoCount = photoGroups.reduce((total, group) => total + group.items.length, 0);
 
+  const tabs: { key: Tab; label: string; count: number | null }[] = [
+    { key: 'posts', label: 'Posts', count: posts.length || null },
+    { key: 'reels', label: 'Reels', count: reels.length || null },
+    { key: 'photos', label: 'Photos', count: photoCount || null },
+    { key: 'about', label: 'About', count: null },
+    { key: 'friends', label: 'Friends', count: relationship?.friendCount ?? null },
+    { key: 'followers', label: 'Followers', count: relationship?.followerCount ?? null },
+    { key: 'following', label: 'Following', count: relationship?.followingCount ?? null },
+  ];
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Identity */}
+      <Card className="overflow-hidden rounded border border-border bg-card">
+        <div className="h-36 bg-secondary sm:h-44">
+          {profile.coverUrl && (
+            <SafeImage
+              src={profile.coverUrl}
+              alt=""
+              className="h-full w-full object-cover"
+              fallbackLabel="Cover unavailable"
+              decoding="async"
+            />
+          )}
+        </div>
+
+        <div className="px-5 pb-5">
+          <div className="flex items-end justify-between gap-3">
+            <div className="relative -mt-10">
+              <Avatar className="h-20 w-20 border-4 border-card">
+                {profile.avatarUrl ? (
+                  <AvatarImage src={profile.avatarUrl} alt={profile.displayName} />
+                ) : null}
+                <AvatarFallback
+                  className="text-xl font-semibold"
+                  style={avatarTone(profile.userId)}
+                >
+                  {initials(profile.displayName)}
+                </AvatarFallback>
+              </Avatar>
+              {isMe && (
+                <>
+                  <input
+                    ref={avatarInput}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) handleAvatarChange(file);
+                      event.target.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => avatarInput.current?.click()}
+                    className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-secondary"
+                    aria-label="Change profile photo"
+                  >
+                    {uploading === 'avatar' ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Pencil className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+              {isMe ? (
+                <>
+                  <input
+                    ref={coverInput}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) handleCoverChange(file);
+                      event.target.value = '';
+                    }}
+                  />
+                  <Button variant="ghost" onClick={() => coverInput.current?.click()}>
+                    {uploading === 'cover' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    Change cover
+                  </Button>
+                  <Button variant="primary" onClick={() => setEditing(true)}>
+                    <Pencil className="h-4 w-4" />
+                    Edit profile
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant={relationship?.isFollowing ? 'ghost' : 'primary'}
+                    disabled={busyAction || relationship?.isBlocked}
+                    onClick={() =>
+                      runAction(() =>
+                        relationship?.isFollowing
+                          ? unfollowUser(profile.userId)
+                          : followUser(profile.userId),
+                      )
+                    }
+                  >
+                    {relationship?.isFollowing ? 'Following' : 'Follow'}
+                  </Button>
+
+                  {relationship?.isFriend ? (
+                    <Button variant="ghost" disabled={busyAction} onClick={() => setTab('friends')}>
+                      Friends
+                    </Button>
+                  ) : relationship?.hasIncomingRequest ? (
+                    <Button
+                      variant="primary"
+                      disabled={busyAction || !requestId}
+                      onClick={() =>
+                        runAction(() =>
+                          requestId ? acceptFriendRequest(requestId) : Promise.resolve(),
+                        )
+                      }
+                    >
+                      Accept request
+                    </Button>
+                  ) : relationship?.hasOutgoingRequest ? (
+                    <Button
+                      variant="ghost"
+                      disabled={busyAction || !requestId}
+                      onClick={() =>
+                        runAction(() =>
+                          requestId ? cancelFriendRequest(requestId) : Promise.resolve(),
+                        )
+                      }
+                    >
+                      Request sent
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      disabled={busyAction}
+                      onClick={() => runAction(() => sendFriendRequest(profile.userId))}
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      Add friend
+                    </Button>
+                  )}
+
+                  <Button variant="ghost" disabled={busyAction} onClick={handleMessage}>
+                    <MessageCircle className="h-4 w-4" />
+                    Message
+                  </Button>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="More actions">
+                        <UserMinus className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {relationship?.isFriend && (
+                        <DropdownMenuItem
+                          onSelect={() => runAction(() => removeFriend(profile.userId))}
+                        >
+                          <UserMinus className="h-4 w-4 text-muted-foreground" />
+                          Remove friend
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          runAction(() =>
+                            relationship?.isMuted
+                              ? unmuteUser(profile.userId)
+                              : muteUser(profile.userId),
+                          )
+                        }
+                      >
+                        <BellOff className="h-4 w-4 text-muted-foreground" />
+                        {relationship?.isMuted ? 'Unmute' : 'Mute'}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:bg-destructive-soft focus:text-destructive"
+                        onSelect={() =>
+                          runAction(() =>
+                            relationship?.isBlocked
+                              ? unblockUser(profile.userId)
+                              : blockUser(profile.userId),
+                          )
+                        }
+                      >
+                        <UserX className="h-4 w-4" />
+                        {relationship?.isBlocked ? 'Unblock' : 'Block'}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-1.5">
+            <h1 className="text-[24px] font-semibold leading-tight tracking-tight text-foreground">
+              {profile.displayName}
+            </h1>
+            {profile.username && (
+              <p className="text-[13px] text-muted-foreground">@{profile.username}</p>
+            )}
+            {profile.bio && (
+              <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+                {profile.bio}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[12px] text-muted-foreground">
+              {profile.locationText && (
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" />
+                  {profile.locationText}
+                </span>
+              )}
+              {profile.website && (
+                <a
+                  href={profile.website.startsWith('http') ? profile.website : `https://${profile.website}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 text-accent hover:underline"
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  {profile.website}
+                </a>
+              )}
+              {profile.city && (
+                <span className="flex items-center gap-1">
+                  <Briefcase className="h-3.5 w-3.5" />
+                  Lives in {profile.city}
+                </span>
+              )}
+              {profile.hometown && (
+                <span className="flex items-center gap-1">
+                  <Home className="h-3.5 w-3.5" />
+                  From {profile.hometown}
+                </span>
+              )}
+              {profile.contactEmail && (
+                <span className="flex items-center gap-1">
+                  <Mail className="h-3.5 w-3.5" />
+                  {profile.contactEmail}
+                </span>
+              )}
+              {profile.phoneNumber && (
+                <span className="flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5" />
+                  {profile.phoneNumber}
+                </span>
+              )}
+              {profile.dateOfBirth && (
+                <span className="flex items-center gap-1">
+                  <Cake className="h-3.5 w-3.5" />
+                  {formatBirthday(profile.dateOfBirth)}
+                </span>
+              )}
+              {profile.joinedAt && (
+                <span className="flex items-center gap-1">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Joined {formatJoined(profile.joinedAt)}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {actionError && (
+            <p className="mt-3 text-[12px] text-destructive">{actionError}</p>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <nav className="flex gap-1 border-t border-border px-3">
+          {tabs.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setTab(item.key)}
+              className={
+                tab === item.key
+                  ? 'border-b-2 border-accent px-3 py-2.5 text-sm font-medium text-foreground'
+                  : 'border-b-2 border-transparent px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground'
+              }
+            >
+              {item.label}
+              {item.count !== null && (
+                <span className="ml-1.5 text-[12px] text-muted-foreground tnum">
+                  {item.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+      </Card>
+
+      {/* Highlights */}
+      {profileUserId && (
+        <HighlightsBar
+          ownerUserId={profileUserId}
+          isMe={isMe}
+          onOpenHighlight={(highlight, stories) => setHighlightStories({ highlight, stories })}
+        />
+      )}
+
+      {/* Edit profile */}
+      {editing && (
+        <Card className="rounded border border-border bg-card p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-[15px] font-semibold text-foreground">Edit profile</h2>
+            <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={() => setEditing(false)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">Name</span>
+              <Input value={draftName} onChange={(e) => setDraftName(e.target.value)} />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">Username</span>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  @
+                </span>
+                <Input
+                  value={draftUsername}
+                  onChange={(e) => setDraftUsername(e.target.value)}
+                  placeholder="yourhandle"
+                  maxLength={30}
+                  className="pl-7"
+                />
+              </div>
+              <span className="mt-1 block text-[12px] text-muted-foreground">
+                Letters, digits and underscore. Used to tag you with @mentions.
+              </span>
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">
+                Location
+              </span>
+              <Input
+                value={draftLocation}
+                onChange={(e) => setDraftLocation(e.target.value)}
+                placeholder="Where you are"
+              />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">Bio</span>
+              <textarea
+                value={draftBio}
+                onChange={(e) => setDraftBio(e.target.value)}
+                rows={3}
+                placeholder="A line about you"
+                className="w-full resize-y rounded border border-input bg-card px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+              />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">Website</span>
+              <Input
+                value={draftWebsite}
+                onChange={(e) => setDraftWebsite(e.target.value)}
+                placeholder="https://"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">
+                Contact email
+              </span>
+              <Input
+                type="email"
+                value={draftEmail}
+                onChange={(e) => setDraftEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">
+                Phone number
+              </span>
+              <Input
+                value={draftPhone}
+                onChange={(e) => setDraftPhone(e.target.value)}
+                placeholder="Optional"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">
+                Date of birth
+              </span>
+              <Input
+                type="date"
+                value={draftBirthday}
+                onChange={(e) => setDraftBirthday(e.target.value)}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">City</span>
+              <Input
+                value={draftCity}
+                onChange={(e) => setDraftCity(e.target.value)}
+                placeholder="Where you live"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-[13px] font-medium text-foreground">
+                Hometown
+              </span>
+              <Input
+                value={draftHometown}
+                onChange={(e) => setDraftHometown(e.target.value)}
+                placeholder="Where you are from"
+              />
+            </label>
+          </div>
+
