@@ -986,3 +986,418 @@ export default function ProfilePage() {
             </label>
           </div>
 
+          <p className="mt-3 text-[12px] text-muted-foreground">
+            Who can see each of these is set in{' '}
+            <Link to="/settings" className="font-medium text-accent hover:underline">
+              Settings → Privacy
+            </Link>
+            .
+          </p>
+
+          <div className="mt-4 flex items-center gap-2">
+            <Button variant="primary" disabled={savingProfile} onClick={handleSaveProfile}>
+              {savingProfile && <Loader2 className="h-4 w-4 animate-spin" />}
+              Save changes
+            </Button>
+            <Button variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Tab content */}
+      {tab === 'posts' && (
+        <div className="space-y-4">
+          {postsStatus === 'loading' && posts.length === 0 && (
+            <div className="flex justify-center py-16 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          )}
+
+          {postsStatus === 'error' && posts.length === 0 && (
+            <Card className="rounded border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Could not load posts</p>
+              <p className="mt-1">{postsError}</p>
+            </Card>
+          )}
+
+          {postsStatus === 'ready' && posts.length === 0 && (
+            <Card className="rounded border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+              {isMe ? 'You have not posted yet.' : 'No posts yet.'}
+            </Card>
+          )}
+
+          {posts.map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              author={profile}
+              viewerReaction={viewerReactionFrom(reactions, post)}
+              onReact={handleReact}
+              bookmarked={savedIds.has(post.id)}
+              onToggleBookmark={handleToggleBookmark}
+            />
+          ))}
+
+          {nextCursor && (
+            <div className="flex justify-center">
+              <Button
+                variant="ghost"
+                disabled={postsStatus === 'loading'}
+                onClick={() => loadPosts(nextCursor ?? undefined)}
+              >
+                Load more posts
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'reels' && (
+        <div className="space-y-4">
+          {reelsStatus === 'loading' && reels.length === 0 && (
+            <div className="flex justify-center py-16 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          )}
+
+          {reelsStatus === 'error' && reels.length === 0 && (
+            <Card className="rounded border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Could not load reels</p>
+              <p className="mt-1">{reelsError}</p>
+            </Card>
+          )}
+
+          {reelsStatus === 'ready' && reels.length === 0 && (
+            <Card className="rounded border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+              {isMe ? 'You have not published any reels yet.' : 'No reels yet.'}
+            </Card>
+          )}
+
+          {reels.length > 0 && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {reels.map((reel) => (
+                <Link
+                  key={reel.id}
+                  to="/reels"
+                  className="group relative overflow-hidden rounded border border-border bg-[#111315]"
+                >
+                  <SafeVideo
+                    src={reel.url}
+                    className="aspect-[9/16] w-full"
+                    placeholderClassName="text-white/90"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-black/50 px-2 py-1.5 text-[12px] text-white">
+                    <span className="truncate">{reel.caption ?? 'Reel'}</span>
+                    <span className="shrink-0 tnum">{reel.viewCount}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'photos' && (
+        <div className="space-y-4">
+          {posts.length === 0 && postsStatus === 'loading' && (
+            <div className="flex justify-center py-16 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          )}
+
+          {photoGroups.map((group) => {
+            // Empty albums are hidden, except posts, which explains itself once loaded.
+            if (group.items.length === 0 && (group.key !== 'posts' || postsStatus !== 'ready')) {
+              return null;
+            }
+            return (
+              <Card key={group.key} className="rounded border border-border bg-card p-4">
+                <div className="flex items-baseline gap-2">
+                  <h2 className="text-[15px] font-semibold text-foreground">{group.title}</h2>
+                  <span className="text-[12px] text-muted-foreground tnum">
+                    {group.items.length}
+                  </span>
+                </div>
+                {group.items.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted-foreground">{group.emptyText}</p>
+                ) : (
+                  <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {group.items.map((item) => (
+                      <a
+                        key={item.id}
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={item.alt}
+                        className="block overflow-hidden rounded border border-border bg-secondary transition-opacity hover:opacity-90"
+                      >
+                        <SafeImage
+                          src={item.url}
+                          alt={item.alt}
+                          loading="lazy"
+                          className="aspect-square w-full object-cover"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+
+          {nextCursor && (
+            <div className="flex justify-center">
+              <Button
+                variant="ghost"
+                disabled={postsStatus === 'loading'}
+                onClick={() => loadPosts(nextCursor ?? undefined)}
+              >
+                Load more photos
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'about' && (
+        <div className="space-y-4">
+          {!profile.bio &&
+            !profile.contactEmail &&
+            !profile.phoneNumber &&
+            !profile.website &&
+            !profile.locationText &&
+            !profile.city &&
+            !profile.hometown &&
+            !profile.dateOfBirth &&
+            !profile.joinedAt && (
+              <Card className="rounded border border-border bg-card p-8 text-center">
+                <p className="font-medium text-foreground">Nothing here yet</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {isMe
+                    ? 'Fill in your details so people know who they are talking to.'
+                    : 'This profile has no details to show.'}
+                </p>
+                {isMe && (
+                  <Button variant="primary" className="mt-4" onClick={() => setEditing(true)}>
+                    <Pencil className="h-4 w-4" />
+                    Add details
+                  </Button>
+                )}
+              </Card>
+            )}
+
+          {(profile.bio ||
+            profile.contactEmail ||
+            profile.phoneNumber ||
+            profile.website ||
+            profile.locationText ||
+            profile.city ||
+            profile.hometown ||
+            profile.dateOfBirth ||
+            profile.joinedAt) && (
+            <Card className="rounded border border-border bg-card p-5">
+              <h2 className="text-[15px] font-semibold text-foreground">Intro</h2>
+              {isMe && privacy && (
+                <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
+                  Items marked “Friends” or “Only you” are hidden from everyone outside that group.
+                  You can change it in{' '}
+                  <Link to="/settings?section=privacy" className="text-accent hover:underline">
+                    Settings → Privacy
+                  </Link>
+                  .
+                </p>
+              )}
+              <div className="mt-2 space-y-1 text-sm leading-relaxed">
+                <p className="text-foreground">{profile.displayName}</p>
+                {profile.username && (
+                  <p className="text-[13px] text-muted-foreground">@{profile.username}</p>
+                )}
+                {profile.bio ? (
+                  <p className="whitespace-pre-wrap pt-1 text-foreground">
+                    {profile.bio}
+                    <AudienceChip audience={privacy?.bioAudience} />
+                  </p>
+                ) : (
+                  isMe && (
+                    <p className="pt-1 text-muted-foreground">
+                      No bio yet — add one from Edit profile.
+                    </p>
+                  )
+                )}
+              </div>
+
+              {(profile.locationText ||
+                profile.city ||
+                profile.hometown ||
+                profile.dateOfBirth ||
+                profile.joinedAt) && (
+                <div className="mt-2 divide-y divide-border border-t border-border">
+                  {profile.locationText && (
+                    <AboutRow
+                      icon={MapPin}
+                      label="Location"
+                      audience={privacy?.locationAudience}
+                    >
+                      {profile.locationText}
+                    </AboutRow>
+                  )}
+                  {profile.city && (
+                    <AboutRow icon={Briefcase} label="City" audience={privacy?.cityAudience}>
+                      Lives in {profile.city}
+                    </AboutRow>
+                  )}
+                  {profile.hometown && (
+                    <AboutRow icon={Home} label="Hometown" audience={privacy?.hometownAudience}>
+                      From {profile.hometown}
+                    </AboutRow>
+                  )}
+                  {profile.dateOfBirth && (
+                    <AboutRow
+                      icon={Cake}
+                      label="Birthday"
+                      audience={privacy?.birthdayAudience}
+                    >
+                      {formatBirthday(profile.dateOfBirth)}
+                    </AboutRow>
+                  )}
+                  {profile.joinedAt && (
+                    <AboutRow icon={CalendarDays} label="Joined">
+                      {formatJoined(profile.joinedAt)}
+                    </AboutRow>
+                  )}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {(profile.contactEmail || profile.phoneNumber || profile.website) && (
+            <Card className="rounded border border-border bg-card p-5">
+              <h2 className="text-[15px] font-semibold text-foreground">Contact info</h2>
+              <div className="mt-2 divide-y divide-border border-t border-border">
+                {profile.contactEmail && (
+                  <AboutRow icon={Mail} label="Email" audience={privacy?.emailAudience}>
+                    <a
+                      href={`mailto:${profile.contactEmail}`}
+                      className="text-accent hover:underline"
+                    >
+                      {profile.contactEmail}
+                    </a>
+                  </AboutRow>
+                )}
+                {profile.phoneNumber && (
+                  <AboutRow icon={Phone} label="Phone" audience={privacy?.phoneAudience}>
+                    <a
+                      href={`tel:${profile.phoneNumber}`}
+                      className="text-accent hover:underline"
+                    >
+                      {profile.phoneNumber}
+                    </a>
+                  </AboutRow>
+                )}
+                {profile.website && (
+                  <AboutRow icon={Globe} label="Website" audience={privacy?.websiteAudience}>
+                    <a
+                      href={
+                        profile.website.startsWith('http')
+                          ? profile.website
+                          : `https://${profile.website}`
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-accent hover:underline"
+                    >
+                      {profile.website}
+                    </a>
+                  </AboutRow>
+                )}
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {(tab === 'friends' || tab === 'followers' || tab === 'following') && (
+        <Card className="rounded border border-border bg-card">
+          {peopleStatus === 'loading' && (
+            <p className="px-5 py-6 text-sm text-muted-foreground">Loading…</p>
+          )}
+          {peopleStatus === 'error' && (
+            <p className="px-5 py-6 text-sm text-muted-foreground">
+              {peopleError ?? 'Could not load this list.'}
+            </p>
+          )}
+          {peopleStatus === 'ready' && people.length === 0 && (
+            <p className="px-5 py-6 text-sm text-muted-foreground">
+              {tab === 'friends'
+                ? 'No friends yet.'
+                : tab === 'followers'
+                  ? 'No followers yet.'
+                  : 'Not following anyone yet.'}
+            </p>
+          )}
+          {peopleStatus === 'ready' && people.length > 0 && (
+            <ul className="divide-y divide-border">
+              {people.map((person) => (
+                <li key={person.userId}>
+                  <Link
+                    to={`/profile/${person.userId}`}
+                    className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-secondary"
+                  >
+                    <Avatar className="h-9 w-9">
+                      {person.avatarUrl ? (
+                        <AvatarImage src={person.avatarUrl} alt={person.displayName} />
+                      ) : null}
+                      <AvatarFallback style={avatarTone(person.userId)}>
+                        {initials(person.displayName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-foreground">
+                        {person.displayName}
+                      </span>
+                      {person.bio && (
+                        <span className="block truncate text-[12px] text-muted-foreground">
+                          {person.bio}
+                        </span>
+                      )}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {/* Highlight viewer */}
+      {highlightStories && highlightStories.stories.length > 0 && (
+        <StoryViewer
+          stories={highlightStories.stories}
+          authorUserId={highlightStories.highlight.ownerUserId}
+          onClose={() => setHighlightStories(null)}
+          onRemove={
+            isMe
+              ? async (storyId) => {
+                  try {
+                    await removeStoryFromHighlight(highlightStories.highlight.id, storyId);
+                    setHighlightStories((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            stories: prev.stories.filter((story) => story.id !== storyId),
+                          }
+                        : prev,
+                    );
+                  } catch (err) {
+                    setActionError(getErrorMessage(err));
+                  }
+                }
+              : undefined
+          }
+        />
+      )}
+    </div>
+  );
+}
