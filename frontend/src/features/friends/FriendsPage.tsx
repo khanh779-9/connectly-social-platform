@@ -197,3 +197,181 @@ export default function FriendsPage() {
         </Card>
       )}
 
+      {status === 'ready' && tab === 'friends' && (
+        <Card className="rounded border border-border bg-card">
+          {friends.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+              No friends yet. Find people in Explore and send a request.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {friends.map((friend) => {
+                const presenceStatus = presence[friend.userId];
+                const isOnline = presenceStatus?.online === true;
+                const label = presenceLabel(presenceStatus);
+                return (
+                <li key={friend.userId} className="flex items-center gap-3 px-5 py-3">
+                  <span className="relative shrink-0">
+                    <Avatar className="h-10 w-10">
+                      {friend.avatarUrl ? (
+                        <AvatarImage src={friend.avatarUrl} alt={friend.displayName} />
+                      ) : null}
+                      <AvatarFallback style={avatarTone(friend.userId)}>
+                        {initials(friend.displayName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    {isOnline && (
+                      <span
+                        aria-label="Active now"
+                        title="Active now"
+                        className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card bg-[#2f9e44]"
+                      />
+                    )}
+                  </span>
+                  <Link to={`/profile/${friend.userId}`} className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {friend.displayName}
+                    </span>
+                    {label ? (
+                      <span
+                        className={
+                          isOnline
+                            ? 'block text-[12px] font-medium text-[#2f9e44]'
+                            : 'block text-[12px] text-muted-foreground'
+                        }
+                      >
+                        {label}
+                      </span>
+                    ) : (
+                      friend.bio && (
+                        <span className="block truncate text-[12px] text-muted-foreground">
+                          {friend.bio}
+                        </span>
+                      )
+                    )}
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Message ${friend.displayName}`}
+                    onClick={() => message(friend)}
+                  >
+                    <MessageCircle className="h-[18px] w-[18px]" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Remove ${friend.displayName}`}
+                    disabled={workingId === friend.userId}
+                    onClick={() => unfriend(friend)}
+                  >
+                    <UserMinus className="h-[18px] w-[18px]" />
+                  </Button>
+                </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {status === 'ready' && tab === 'received' && (
+        <Card className="rounded border border-border bg-card">
+          {received.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+              No pending requests.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {received.map((request) => (
+                <li key={request.requestId} className="flex items-center gap-3 px-5 py-3">
+                  <Avatar className="h-10 w-10">
+                    {request.profile.avatarUrl ? (
+                      <AvatarImage
+                        src={request.profile.avatarUrl}
+                        alt={request.profile.displayName}
+                      />
+                    ) : null}
+                    <AvatarFallback style={avatarTone(request.otherUserId)}>
+                      {initials(request.profile.displayName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <Link to={`/profile/${request.otherUserId}`} className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {request.profile.displayName}
+                    </span>
+                    <span className="block text-[12px] text-muted-foreground">
+                      Sent {timeAgo(request.createdAt)}
+                    </span>
+                  </Link>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={workingId === request.requestId}
+                    onClick={() => accept(request)}
+                  >
+                    <Check className="h-4 w-4" />
+                    Accept
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Decline request"
+                    disabled={workingId === request.requestId}
+                    onClick={() => decline(request)}
+                  >
+                    <X className="h-[18px] w-[18px]" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {status === 'ready' && tab === 'sent' && (
+        <Card className="rounded border border-border bg-card">
+          {sent.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+              You have not sent any requests.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {sent.map((request) => (
+                <li key={request.requestId} className="flex items-center gap-3 px-5 py-3">
+                  <Avatar className="h-10 w-10">
+                    {request.profile.avatarUrl ? (
+                      <AvatarImage
+                        src={request.profile.avatarUrl}
+                        alt={request.profile.displayName}
+                      />
+                    ) : null}
+                    <AvatarFallback style={avatarTone(request.otherUserId)}>
+                      {initials(request.profile.displayName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <Link to={`/profile/${request.otherUserId}`} className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {request.profile.displayName}
+                    </span>
+                    <span className="block text-[12px] text-muted-foreground">
+                      Waiting since {timeAgo(request.createdAt)}
+                    </span>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={workingId === request.requestId}
+                    onClick={() => cancel(request)}
+                  >
+                    Cancel request
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
