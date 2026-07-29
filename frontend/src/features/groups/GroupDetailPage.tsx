@@ -268,3 +268,177 @@ export default function GroupDetailPage() {
         )}
       </nav>
 
+      {error && <p className="text-[12px] text-destructive">{error}</p>}
+
+      {tab === 'posts' && (
+        <div className="space-y-4">
+          {isMember && (
+            <Card className="rounded border border-border bg-card p-4">
+              <textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                rows={2}
+                maxLength={5000}
+                placeholder={`Write something in ${group.name}`}
+                aria-label="Write a group post"
+                className="w-full resize-none rounded border border-input bg-card px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+              />
+              <div className="mt-2 flex justify-end">
+                <Button type="submit" variant="primary" size="sm" disabled={!draft.trim() || posting}>
+                  <Send className="h-3.5 w-3.5" />
+                  {posting ? 'Posting…' : 'Post'}
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {posts.length === 0 ? (
+            <Card className="rounded border border-border bg-card px-5 py-10 text-center text-sm text-muted-foreground">
+              No posts in this group yet.
+            </Card>
+          ) : (
+            posts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                author={profiles[post.authorUserId] ?? null}
+                viewerReaction={viewerReactionFrom(reactions, post)}
+                onReact={handleReact}
+                onProfilesResolved={(resolved) => setProfiles((prev) => ({ ...prev, ...resolved }))}
+              />
+            ))
+          )}
+        </div>
+      )}
+
+      {tab === 'members' && (
+        <Card className="rounded border border-border bg-card">
+          {members.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-muted-foreground">No members yet.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {members.map((member) => {
+                const profile = profiles[member.userId];
+                return (
+                  <li key={member.userId} className="flex items-center gap-3 px-5 py-3">
+                    <Avatar className="h-9 w-9">
+                      {profile?.avatarUrl ? (
+                        <AvatarImage src={profile.avatarUrl} alt={profile.displayName} />
+                      ) : null}
+                      <AvatarFallback style={avatarTone(member.userId)}>
+                        {initials(profile?.displayName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        to={`/profile/${member.userId}`}
+                        className="block truncate text-sm font-medium text-foreground hover:underline"
+                      >
+                        {profile?.displayName ?? 'User'}
+                      </Link>
+                      <p className="text-[12px] capitalize text-muted-foreground">
+                        {member.role} · joined {timeAgo(member.joinedAt)}
+                      </p>
+                    </div>
+                    {isAdmin && member.role !== 'owner' && member.userId !== meId && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Remove member"
+                        disabled={working}
+                        onClick={() => removeMember(member)}
+                      >
+                        <Trash2 className="h-[18px] w-[18px]" />
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {tab === 'requests' && isAdmin && (
+        <Card className="rounded border border-border bg-card">
+          {pending.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+              No join requests waiting.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {pending.map((member) => {
+                const profile = profiles[member.userId];
+                return (
+                  <li key={member.userId} className="flex items-center gap-3 px-5 py-3">
+                    <Avatar className="h-9 w-9">
+                      {profile?.avatarUrl ? (
+                        <AvatarImage src={profile.avatarUrl} alt={profile.displayName} />
+                      ) : null}
+                      <AvatarFallback style={avatarTone(member.userId)}>
+                        {initials(profile?.displayName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {profile?.displayName ?? 'User'}
+                      </p>
+                      <p className="text-[12px] text-muted-foreground">
+                        Requested {timeAgo(member.joinedAt)}
+                      </p>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={working}
+                      onClick={() => decide(member, true)}
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Approve
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Decline request"
+                      disabled={working}
+                      onClick={() => decide(member, false)}
+                    >
+                      <X className="h-[18px] w-[18px]" />
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  label,
+  count,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        active
+          ? 'border-b-2 border-accent px-3 py-2 text-sm font-medium text-foreground'
+          : 'border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground'
+      }
+    >
+      {label}
+      <span className="ml-1.5 text-[12px] text-muted-foreground tnum">{count}</span>
+    </button>
+  );
+}
