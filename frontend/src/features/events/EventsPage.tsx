@@ -258,3 +258,117 @@ export default function EventsPage() {
         </Card>
       )}
 
+      {error && <p className="text-[12px] text-destructive">{error}</p>}
+
+      {status === 'loading' && (
+        <div className="flex justify-center py-16 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      )}
+
+      {status === 'error' && (
+        <Card className="rounded border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Could not load events</p>
+          <p className="mt-1">{error}</p>
+          <Button variant="ghost" className="mt-4" onClick={load}>
+            Try again
+          </Button>
+        </Card>
+      )}
+
+      {status === 'ready' && (
+        <div className="space-y-3">
+          {events.length === 0 ? (
+            <Card className="rounded border border-border bg-card px-5 py-10 text-center text-sm text-muted-foreground">
+              No upcoming events. Create one and invite your network.
+            </Card>
+          ) : (
+            events.map((event) => (
+              <Card className="rounded border border-border bg-card p-4">
+                <div className="flex gap-4">
+                  <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-md bg-secondary">
+                    <span className="text-[12px] uppercase text-muted-foreground">
+                      {new Date(event.startsAt).toLocaleDateString(undefined, { month: 'short' })}
+                    </span>
+                    <span className="text-xl font-semibold leading-none text-foreground">
+                      {new Date(event.startsAt).getDate()}
+                    </span>
+                    <span className="mt-0.5 text-[12px] text-muted-foreground">
+                      {new Date(event.startsAt).toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <h2 className="truncate text-[15px] font-semibold text-foreground">{event.title}</h2>
+                    {event.description && (
+                      <p className="mt-0.5 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
+                        {event.description}
+                      </p>
+                    )}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-foreground">
+                      {event.locationText && (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-3.5 w-3.5" /> {event.locationText}
+                        </span>
+                      )}
+                      {event.onlineUrl && (
+                        <a
+                          href={event.onlineUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-accent hover:underline"
+                        >
+                          <Video className="h-3.5 w-3.5" /> Online
+                        </a>
+                      )}
+                      {event.groupId && (
+                        <span className="inline-flex items-center gap-1">
+                          <CalendarDays className="h-3.5 w-3.5" /> Group event
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[12px] text-muted-foreground tnum">
+                      {event.goingCount} going · {event.interestedCount} interested
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+                  <Button
+                    variant={event.viewerRsvp === 'going' ? 'primary' : 'ghost'}
+                    size="sm"
+                    disabled={workingId === event.id}
+                    onClick={() => rsvp(event, 'going')}
+                  >
+                    Going
+                  </Button>
+                  <Button
+                    variant={event.viewerRsvp === 'interested' ? 'primary' : 'ghost'}
+                    size="sm"
+                    disabled={workingId === event.id}
+                    onClick={() => rsvp(event, 'interested')}
+                  >
+                    Interested
+                  </Button>
+                  {event.viewerRsvp && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={workingId === event.id}
+                      onClick={() => rsvp(event, 'notgoing')}
+                    >
+                      Not going
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
