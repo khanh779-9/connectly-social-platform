@@ -128,3 +128,87 @@ export default function StoryRail({
               ? (author.stories.length - unseenStories.length) / author.stories.length
               : 0;
 
+            return (
+              <button
+                key={author.userId}
+                type="button"
+                onClick={() => onOpenAuthor(author)}
+                className="relative flex w-[86px] shrink-0 flex-col items-center gap-1.5"
+              >
+                <span className="relative flex h-16 w-16 items-center justify-center rounded-full">
+                  {/* Gradient ring for unseen stories */}
+                  {unseen && (
+                    <span
+                      className="absolute inset-[-2px] rounded-full p-[2px]"
+                      style={gradientRingStyle}
+                    >
+                      <span className="relative h-full w-full rounded-full" style={gradientRingInnerStyle} />
+                    </span>
+                  )}
+                  {/* Progress indicator - thin arc showing viewed progress */}
+                  {author.stories.length > 1 && (
+                    <svg
+                      className="absolute inset-0"
+                      viewBox="0 0 64 64"
+                      aria-hidden="true"
+                    >
+                      <circle
+                        className="text-border"
+                        cx="32"
+                        cy="32"
+                        r="28"
+                        strokeWidth="2"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeDasharray={`${Math.max(0.1, progress * 176)} 176`}
+                        strokeLinecap="round"
+                        style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }}
+                      />
+                    </svg>
+                  )}
+                  <Avatar className="h-[58px] w-[58px]">
+                    {cover ? (
+                      <AvatarImage src={cover.url} alt={profile?.displayName ?? 'Story'} />
+                    ) : profile?.avatarUrl ? (
+                      <AvatarImage src={profile.avatarUrl} alt={profile.displayName} />
+                    ) : null}
+                    <AvatarFallback style={avatarTone(author.userId)}>
+                      {initials(profile?.displayName)}
+                    </AvatarFallback>
+                  </Avatar>
+                </span>
+                <span className="w-full truncate text-center text-[12px] text-muted-foreground">
+                  {profile?.displayName ?? 'Story'}
+                </span>
+                {/* Unread count badge */}
+                {unseen && (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 flex min-w-[16px] h-4 items-center justify-center rounded-full bg-accent px-1 text-[12px] font-semibold leading-none text-accent-foreground"
+                    aria-label={`${unseenStories.length} unviewed stories`}
+                  >
+                    {unseenStories.length > 9 ? '9+' : unseenStories.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center gap-2 py-4 text-[13px] text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading stories…
+        </div>
+      )}
+
+      {!loading && error && (
+        <p className="px-1 py-3 text-[12px] text-destructive">{error}</p>
+      )}
+
+      {!loading && !error && authors.length === 0 && (
+        <p className="px-1 py-3 text-[13px] text-muted-foreground">
+          No stories right now. Add one to share a moment with your friends.
+        </p>
+      )}
+    </Card>
+  );
+}
