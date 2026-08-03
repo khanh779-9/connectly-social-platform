@@ -262,3 +262,169 @@ export default function ReelPlayer({
           )}
         </div>
 
+        {/* creator + caption */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3 pb-16">
+          <div className="pointer-events-auto flex items-center gap-2">
+            <Avatar className="h-8 w-8">
+              {author?.avatarUrl ? (
+                <AvatarImage src={author.avatarUrl} alt={author.displayName} />
+              ) : null}
+              <AvatarFallback style={avatarTone(current.authorUserId)}>
+                {initials(author?.displayName)}
+              </AvatarFallback>
+            </Avatar>
+            <Link
+              to={`/profile/${current.authorUserId}`}
+              className="truncate text-[13px] font-medium text-white hover:underline"
+            >
+              {author?.displayName ?? 'Creator'}
+            </Link>
+            <span className="text-[12px] text-white/90 tnum">{current.viewCount} views</span>
+          </div>
+          {current.caption && (
+            <RichText
+              text={current.caption}
+              mentions={current.mentions}
+              className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-white/90"
+            />
+          )}
+        </div>
+
+        {/* action rail */}
+        <div className="absolute right-2 bottom-20 z-20 flex flex-col items-center gap-4">
+          <button
+            type="button"
+            aria-label={liked ? 'Remove reaction' : 'Like this reel'}
+            onClick={() => onToggleReaction?.(current)}
+            className="flex flex-col items-center gap-1 text-white/90 transition-colors hover:text-white"
+          >
+            <Heart className={cn('h-7 w-7', liked && 'fill-accent text-accent')} />
+            <span className="text-[12px] font-medium tnum">{current.reactionCount}</span>
+          </button>
+          <button
+            type="button"
+            aria-label="Open comments"
+            onClick={() => setCommentsOpen(true)}
+            className="flex flex-col items-center gap-1 text-white/90 transition-colors hover:text-white"
+          >
+            <MessageCircle className="h-7 w-7" />
+            <span className="text-[12px] font-medium tnum">{current.commentCount}</span>
+          </button>
+          <button
+            type="button"
+            aria-label="Share this reel"
+            onClick={() => onShare?.(current)}
+            className="flex flex-col items-center gap-1 text-white/90 transition-colors hover:text-white"
+          >
+            <Share2 className="h-7 w-7" />
+            <span className="text-[12px] font-medium tnum">{current.shareCount}</span>
+          </button>
+          <button
+            type="button"
+            aria-label={current.viewerBookmarked ? 'Remove bookmark' : 'Save this reel'}
+            onClick={() => onToggleBookmark?.(current)}
+            className="flex flex-col items-center gap-1 text-white/90 transition-colors hover:text-white"
+          >
+            <Bookmark className={cn('h-7 w-7', current.viewerBookmarked && 'fill-white')} />
+          </button>
+        </div>
+
+        {/* previous / next */}
+        <button
+          type="button"
+          aria-label="Previous reel"
+          disabled={index === 0}
+          onClick={() => setIndex((prev) => Math.max(prev - 1, 0))}
+          className="absolute left-2 top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-25"
+        >
+          <ChevronUp className="h-6 w-6" />
+        </button>
+        <button
+          type="button"
+          aria-label="Next reel"
+          disabled={index >= reels.length - 1}
+          onClick={() => setIndex((prev) => Math.min(prev + 1, reels.length - 1))}
+          className="absolute right-2 top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-25"
+        >
+          <ChevronDown className="h-6 w-6" />
+        </button>
+
+        {/* comment overlay */}
+        {commentsOpen && (
+          <div className="absolute inset-0 z-30 flex flex-col bg-black/85">
+            <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 text-white">
+              <span className="text-[13px] font-medium">Comments</span>
+              <button
+                type="button"
+                aria-label="Close comments"
+                onClick={() => setCommentsOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-white/85 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+              {comments.length === 0 && (
+                <p className="text-[13px] text-white/90">No comments yet.</p>
+              )}
+              {comments.map((comment) => {
+                const authorProfile = profiles[comment.authorUserId] ?? null;
+                return (
+                  <div key={comment.id} className="flex gap-2">
+                    <Avatar className="h-7 w-7 shrink-0">
+                      {authorProfile?.avatarUrl ? (
+                        <AvatarImage src={authorProfile.avatarUrl} alt={authorProfile.displayName} />
+                      ) : null}
+                      <AvatarFallback style={avatarTone(comment.authorUserId)}>
+                        {initials(authorProfile?.displayName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <span className="text-[12px] font-medium text-white">
+                        {authorProfile?.displayName ?? 'Member'}
+                      </span>
+                      <RichText
+                        text={comment.content}
+                        mentions={comment.mentions}
+                        className="text-[13px] leading-relaxed text-white/90"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2 border-t border-white/10 px-3 py-3">
+              <input
+                type="text"
+                value={commentDraft}
+                onChange={(event) => setCommentDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') handleSendComment();
+                }}
+                placeholder="Write a comment"
+                aria-label="Write a comment"
+                className="h-9 flex-1 rounded border border-white/20 bg-transparent px-3 text-[13px] text-white outline-none placeholder:text-white/65 focus:border-white/40"
+              />
+              <button
+                type="button"
+                onClick={handleSendComment}
+                disabled={!commentDraft.trim() || sending}
+                className="text-[13px] font-medium text-white transition-opacity disabled:opacity-50"
+              >
+                {sending ? <Loader2 className="h-4 w-4" /> : 'Post'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <p className="absolute inset-x-0 bottom-4 z-30 flex items-center justify-center gap-2 px-4 text-center text-[12px] text-white/85">
+            <Loader2 className="h-3.5 w-3.5" /> {error}
+          </p>
+        )}
+      </div>
+    </Overlay>
+  );
+}
