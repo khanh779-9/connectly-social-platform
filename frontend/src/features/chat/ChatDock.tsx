@@ -666,3 +666,245 @@ interface ChatWindowProps {
   onExpand: () => void;
 }
 
+function ChatWindow({
+  className,
+  name,
+  online,
+  avatarUrl,
+  seed,
+  conversationId,
+  messages,
+  myId,
+  minimized,
+  draft,
+  sending,
+  hubReady,
+  hasOlder,
+  loadingOlder,
+  presence,
+  replyTarget,
+  menuId,
+  editing,
+  actionBusyId,
+  error,
+  onDraft,
+  onSend,
+  onLoadOlder,
+  onMinimize,
+  onClose,
+  onToggleMenu,
+  onCloseMenu,
+  onReact,
+  onReply,
+  onStartEdit,
+  onEditDraftChange,
+  onSubmitEdit,
+  onCancelEdit,
+  onRecall,
+  onDeleteForMe,
+  onClearReply,
+  onDismissError,
+  onExpand,
+}: ChatWindowProps) {
+  const {
+    scrollRef,
+    handleScroll,
+    scrollToBottom,
+  } = useChatTimeline(messages, conversationId);
+
+  useEffect(() => {
+    if (!minimized) scrollToBottom();
+  }, [minimized, scrollToBottom]);
+
+  // The action menu is a plain panel, so it has to dismiss itself: Escape or a
+  // click outside the window closes it.
+  const windowRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!menuId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCloseMenu();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && windowRef.current?.contains(target)) return;
+      onCloseMenu();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [menuId, onCloseMenu]);
+
+  async function handleSendAndScroll() {
+    await onSend();
+    scrollToBottom(true);
+  }
+
+  return (
+    <section
+      ref={windowRef}
+      aria-label={`Chat with ${name}`}
+      className={cn(
+        // Leaves room for the launcher (48px) and the side margins on small screens.
+        'pointer-events-auto flex w-[calc(100vw-4.5rem)] flex-col overflow-hidden rounded-t border border-b-0 border-border bg-card shadow-[0_-2px_20px_rgba(16,19,22,0.14)] sm:w-[320px]',
+        minimized ? 'h-12' : 'h-[420px]',
+        className,
+      )}
+    >
+      <header className="flex h-12 shrink-0 items-center gap-2 px-2.5">
+        <span className="relative shrink-0">
+          <Avatar className="h-8 w-8">
+            {avatarUrl ? <AvatarImage src={avatarUrl} alt={name} /> : null}
+            <AvatarFallback className="text-[12px]" style={avatarTone(seed)}>
+              {initials(name)}
+            </AvatarFallback>
+          </Avatar>
+          {online && (
+            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card" style={{ backgroundColor: 'var(--accent-online)' }} />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-semibold leading-tight text-foreground">
+            {name}
+          </p>
+          <p className="truncate text-[12px] leading-tight text-muted-foreground">
+            {presenceLabel(presence) ?? (online ? 'Active now' : hubReady ? 'Offline' : 'Connecting…')}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onMinimize}
+          aria-label={minimized ? 'Restore chat' : 'Minimise chat'}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          <Minus className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={onExpand}
+          aria-label="Open in Messages"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close chat"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </header>
+
+      {!minimized && (
+        <>
+          <div
+            ref={scrollRef}
+            aria-busy={loadingOlder}
+            onScroll={(event) => {
+              handleScroll();
+              if (
+                hasOlder &&
+                !loadingOlder &&
+                event.currentTarget.scrollTop <= LOAD_OLDER_THRESHOLD_PX
+              ) {
+                onLoadOlder();
+              }
+            }}
+            className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain px-3 py-3 scroll-quiet"
+          >
+            {messages.length === 0 ? (
+              <p className="m-auto text-center text-[12px] text-muted-foreground">
+                Say hello 👋
+              </p>
+            ) : (
+              messages.map((message) => (
+                <ChatDockMessage
+                  key={message.id}
+                  message={message}
+                  mine={message.senderUserId === myId}
+                  menuOpen={menuId === message.id}
+                  editing={editing?.id === message.id}
+                  editDraft={editing?.draft ?? ''}
+                  busy={actionBusyId === message.id}
+                  onToggleMenu={() => onToggleMenu(message.id)}
+                  onReact={(emoji) => onReact(message, emoji)}
+                  onReply={() => onReply(message)}
+                  onStartEdit={() => onStartEdit(message)}
+                  onEditDraftChange={onEditDraftChange}
+                  onSubmitEdit={() => onSubmitEdit(message)}
+                  onCancelEdit={onCancelEdit}
+                  onRecall={() => onRecall(message)}
+                  onDeleteForMe={() => onDeleteForMe(message)}
+                />
+              ))
+            )}
+          </div>
+
+          {error && (
+            <div className="flex items-start gap-2 border-t border-border bg-destructive-soft/40 px-3 py-2">
+              <p className="min-w-0 flex-1 text-[12px] leading-snug text-destructive">{error}</p>
+              <button
+                type="button"
+                onClick={onDismissError}
+                aria-label="Dismiss error"
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-destructive transition-colors hover:bg-destructive/10"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
+          {replyTarget && (
+            <div className="flex items-center gap-2 border-t border-border bg-secondary/60 px-3 py-1.5">
+              <p className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
+                Trả lời <span className="text-foreground">{(replyTarget.body ?? '').slice(0, 40)}</span>
+              </p>
+              <button
+                type="button"
+                onClick={onClearReply}
+                aria-label="Cancel reply"
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 border-t border-border p-2">
+            <input
+              type="text"
+              value={draft}
+              onChange={(event) => onDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void handleSendAndScroll();
+                }
+              }}
+              placeholder="Write a message"
+              aria-label={`Write a message to ${name}`}
+              className="h-9 min-w-0 flex-1 rounded border border-input bg-background px-3.5 text-[13px] outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+            />
+            <button
+              type="button"
+              onClick={() => void handleSendAndScroll()}
+              disabled={!draft.trim() || sending}
+              aria-label="Send message"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-40"
+            >
+              {sending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
