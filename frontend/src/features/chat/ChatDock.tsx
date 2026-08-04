@@ -446,3 +446,223 @@ export default function ChatDock() {
     }
   }
 
+  /** Delete for me only: the message leaves my timeline, theirs keeps it. */
+  async function deleteForMe(conversationId: string, message: ChatMessageDto) {
+    if (actionBusyId) return;
+    setActionBusyId(message.id);
+    try {
+      await hideChatMessage(message.id);
+      setThreads((prev) => ({
+        ...prev,
+        [conversationId]: (prev[conversationId] ?? []).filter((m) => m.id !== message.id),
+      }));
+      closeMenu(conversationId);
+    } catch (err) {
+      setErrors((prev) => ({ ...prev, [conversationId]: getErrorMessage(err) }));
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  const totalUnread = conversations.reduce(
+    (sum, conv) => sum + Math.max(0, conv.unreadCount),
+    0,
+  );
+
+  if (!myId) return null;
+  if (pathname.startsWith('/messages')) return null;
+
+  return (
+    <div className="pointer-events-none fixed bottom-4 right-3 z-40 flex items-end gap-3">
+      {windows.map((win, windowIndex) => {
+        const conv = conversations.find((c) => c.id === win.id);
+        if (!conv) return null;
+        const { name, online, avatar } = titleOf(conv);
+        const other = otherMember(conv);
+        return (
+          <ChatWindow
+            key={win.id}
+            // Phones only have room for one window; the second waits for sm+.
+            className={windowIndex > 0 ? 'hidden sm:flex' : undefined}
+            name={name}
+            online={online}
+            avatarUrl={avatar}
+            seed={other?.userId ?? conv.id}
+            conversationId={win.id}
+            messages={threads[win.id] ?? []}
+            myId={myId}
+            minimized={win.minimized}
+            draft={drafts[win.id] ?? ''}
+            sending={Boolean(sendingIds[win.id])}
+            hubReady={hubReady}
+            hasOlder={Boolean(messageCursors[win.id])}
+            loadingOlder={Boolean(loadingOlder[win.id])}
+            presence={other ? presence[other.userId] ?? null : null}
+            replyTarget={replyTargets[win.id] ?? null}
+            menuId={menuIds[win.id] ?? null}
+            editing={edits[win.id] ?? null}
+            actionBusyId={actionBusyId}
+            error={errors[win.id] ?? null}
+            onDraft={(text) => setDrafts((prev) => ({ ...prev, [win.id]: text }))}
+            onSend={() => handleSend(win.id)}
+            onLoadOlder={() => loadOlderMessages(win.id)}
+            onMinimize={() => minimizeWindow(win.id)}
+            onClose={() => closeWindow(win.id)}
+            onToggleMenu={(messageId) =>
+              setMenuIds((prev) => ({
+                ...prev,
+                [win.id]: prev[win.id] === messageId ? null : messageId,
+              }))
+            }
+            onCloseMenu={() => setMenuIds((prev) => ({ ...prev, [win.id]: null }))}
+            onReact={(message, emoji) => void toggleReaction(win.id, message, emoji)}
+            onReply={(message) => startReply(win.id, message)}
+            onStartEdit={(message) => startEdit(win.id, message)}
+            onEditDraftChange={(text) =>
+              setEdits((prev) => ({
+                ...prev,
+                [win.id]: prev[win.id] ? { ...prev[win.id]!, draft: text } : prev[win.id] ?? null,
+              }))
+            }
+            onSubmitEdit={(message) => void submitEdit(win.id, message)}
+            onCancelEdit={() => setEdits((prev) => ({ ...prev, [win.id]: null }))}
+            onRecall={(message) => void recallMessage(win.id, message)}
+            onDeleteForMe={(message) => void deleteForMe(win.id, message)}
+            onClearReply={() => setReplyTargets((prev) => ({ ...prev, [win.id]: null }))}
+            onDismissError={() => setErrors((prev) => ({ ...prev, [win.id]: null }))}
+            onExpand={() =>
+              navigate('/messages', { state: { conversationId: win.id } })
+            }
+          />
+        );
+      })}
+
+      <div className="pointer-events-auto relative">
+        {trayOpen && (
+          <>
+            <Overlay className="fixed inset-0 z-0" onClick={() => setTrayOpen(false)} />
+            <div className="absolute bottom-[calc(100%+8px)] right-0 z-10 max-h-[min(420px,70vh)] w-80 overflow-y-auto rounded border border-border bg-popover p-1.5 shadow-dropdown scroll-quiet">
+              <div className="flex items-center justify-between px-2.5 py-2">
+                <p className="text-[13px] font-semibold text-foreground">Chats</p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/messages')}
+                  className="text-[12px] font-medium text-accent hover:underline"
+                >
+                  See all
+                </button>
+              </div>
+              {conversations.length === 0 ? (
+                <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
+                  No conversations yet.
+                </p>
+              ) : (
+                conversations.map((conv) => {
+                  const info = titleOf(conv);
+                  const other = otherMember(conv);
+                  return (
+                    <button
+                      key={conv.id}
+                      type="button"
+                      onClick={() => openWindow(conv.id)}
+                      className={cn(
+                        'flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left transition-colors hover:bg-secondary',
+                        conv.unreadCount > 0 && 'bg-accent-soft/60',
+                      )}
+                    >
+                      <span className="relative">
+                        <Avatar className="h-9 w-9">
+                          {info.avatar ? (
+                            <AvatarImage src={info.avatar} alt={info.name} />
+                          ) : null}
+                          <AvatarFallback style={avatarTone(other?.userId ?? conv.id)}>
+                            {initials(info.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        {info.online && (
+                          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-popover" style={{ backgroundColor: 'var(--accent-online)' }} />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium text-foreground">
+                          {info.name}
+                        </span>
+                        <span className="block truncate text-[12px] text-muted-foreground">
+                          {conv.lastMessagePreview ??
+                            (conv.lastMessageAt ? timeAgo(conv.lastMessageAt) : 'No messages yet')}
+                        </span>
+                      </span>
+                      {conv.unreadCount > 0 && (
+                        <span className="rounded-full bg-accent px-1.5 py-0.5 text-[12px] font-semibold leading-none text-accent-foreground tnum">
+                          {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setTrayOpen((open) => !open)}
+          aria-expanded={trayOpen}
+          aria-label="Chats"
+          title="Chats"
+          className="relative flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg transition-transform transition-colors hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
+        >
+          <MessageCircle className="h-6 w-6" />
+          {totalUnread > 0 && (
+            <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-destructive px-1 text-[12px] font-semibold leading-none text-white tnum">
+              {totalUnread > 9 ? '9+' : totalUnread}
+            </span>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface ChatWindowProps {
+  className?: string;
+  name: string;
+  online: boolean;
+  avatarUrl?: string | null;
+  seed: string;
+  conversationId: string;
+  messages: ChatMessageDto[];
+  myId?: string;
+  minimized: boolean;
+  draft: string;
+  sending: boolean;
+  hubReady: boolean;
+  hasOlder: boolean;
+  loadingOlder: boolean;
+  presence?: PresenceDto | null;
+  replyTarget?: ChatMessageDto | null;
+  menuId?: string | null;
+  editing?: { id: string; draft: string } | null;
+  actionBusyId?: string | null;
+  error?: string | null;
+  onDraft: (text: string) => void;
+  onSend: () => void | Promise<void>;
+  onLoadOlder: () => void;
+  onMinimize: () => void;
+  onClose: () => void;
+  onToggleMenu: (messageId: string) => void;
+  onCloseMenu: () => void;
+  onReact: (message: ChatMessageDto, emoji: string) => void;
+  onReply: (message: ChatMessageDto) => void;
+  onStartEdit: (message: ChatMessageDto) => void;
+  onEditDraftChange: (text: string) => void;
+  onSubmitEdit: (message: ChatMessageDto) => void;
+  onCancelEdit: () => void;
+  onRecall: (message: ChatMessageDto) => void;
+  onDeleteForMe: (message: ChatMessageDto) => void;
+  onClearReply: () => void;
+  onDismissError: () => void;
+  onExpand: () => void;
+}
+
