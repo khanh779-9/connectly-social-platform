@@ -585,3 +585,310 @@ export default function MessagesPage() {
     }
   }
 
+  /** Toggle one emoji reaction on a message (one user per emoji). */
+  async function toggleReaction(message: ChatMessageDto, emoji: string) {
+    if (message.status === 'deleted' || actionBusyId) return;
+    const existing = (message.reactions ?? []).find((r) => r.reactionType === emoji);
+    setActionBusyId(message.id);
+    try {
+      const dto = existing?.viewerReacted
+        ? await removeChatMessageReaction(message.id, emoji)
+        : await addChatMessageReaction(message.id, emoji);
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== message.id) return m;
+          const reactions = (m.reactions ?? []).filter((r) => r.reactionType !== emoji);
+          if (dto.count > 0) reactions.push(dto);
+          return { ...m, reactions };
+        }),
+      );
+    } catch {
+      // ignore — the reaction stays as-is
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  function startEditing(message: ChatMessageDto) {
+    setEditingId(message.id);
+    setEditDraft(message.body ?? '');
+    setMenuId(null);
+  }
+
+  async function submitEdit(message: ChatMessageDto) {
+    const body = editDraft.trim();
+    if (!body || actionBusyId) return;
+    setActionBusyId(message.id);
+    try {
+      const updated = await editChatMessage(message.id, body);
+      setMessages((prev) => prev.map((m) => (m.id === message.id ? updated : m)));
+      setEditingId(null);
+      setEditDraft('');
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  /** Recall for everybody: both sides keep a "recalled" placeholder. */
+  async function recallForEveryone(message: ChatMessageDto) {
+    if (actionBusyId) return;
+    setActionBusyId(message.id);
+    try {
+      await deleteChatMessage(message.id);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === message.id
+            ? { ...m, status: 'deleted', body: null, attachments: [], reactions: [] }
+            : m,
+        ),
+      );
+      setMenuId(null);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  /** Delete for me only: the message leaves the viewer's timeline, the other
+   *  side keeps it exactly as it was. */
+  async function deleteForMe(message: ChatMessageDto) {
+    if (actionBusyId) return;
+    setActionBusyId(message.id);
+    try {
+      await hideChatMessage(message.id);
+      setMessages((prev) => prev.filter((m) => m.id !== message.id));
+      setMenuId(null);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  function conversationTitle(conv: ConversationDto): { name: string; online: boolean } {
+    const other = otherMember(conv);
+    let name = 'Conversation';
+    if (conv.type === 'group') name = conv.title ?? 'Group chat';
+    else if (other) name = profiles[other.userId]?.displayName ?? 'Loading…';
+
+    return { name, online: conv.type === 'dm' ? (other?.online ?? false) : false };
+  }
+
+  /** The line under the chat title: presence of the other person. */
+  function threadStatusText(conv: ConversationDto): string {
+    if (conv.type === 'group') return 'Group conversation';
+
+    const other = otherMember(conv);
+    const presenceText = other ? presenceLabel(presence[other.userId]) : null;
+    if (presenceText) return presenceText;
+
+    return conversationTitle(conv).online ? 'Online' : 'Offline';
+  }
+
+  const term = filter.trim().toLowerCase();
+  const filteredConversations = conversations.filter((conv) => {
+    const matchesType =
+      conversationFilter === 'all' ||
+      (conversationFilter === 'people' ? conv.type === 'dm' : conv.type === 'group');
+    if (!matchesType) return false;
+    if (!term) return true;
+
+    const title = conversationTitle(conv).name.toLowerCase();
+    const preview = conv.lastMessagePreview?.toLowerCase() ?? '';
+    return title.includes(term) || preview.includes(term);
+  });
+
+  let emptyListText = 'No conversations yet.';
+  if (term) emptyListText = `No conversations match “${filter.trim()}”.`;
+  else if (conversationFilter === 'groups') emptyListText = 'No group conversations yet.';
+  else if (conversationFilter === 'people') emptyListText = 'No conversations with people yet.';
+
+  if (status === 'loading') {
+    return (
+      <div className="flex justify-center py-20 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    );
+  }
+
+  if (status === 'backend-unavailable') {
+    return (
+      <Card className="rounded border border-border bg-card p-8 text-center">
+        <h1 className="text-[20px] font-semibold text-foreground">Chat service offline</h1>
+        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+          {error}
+        </p>
+        <Button variant="primary" className="mt-5" onClick={load}>
+          Retry
+        </Button>
+      </Card>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <Card className="rounded border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+        <p className="font-medium text-foreground">Could not load conversations</p>
+        <p className="mt-1">{error}</p>
+        <Button variant="ghost" className="mt-4" onClick={load}>
+          Try again
+        </Button>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="flex h-[calc(100dvh-8rem)] min-h-[480px] flex-col gap-0 lg:flex-row">
+      {/* Column 1 — conversations */}
+      <section
+        className={cn(
+          'flex min-h-0 w-full flex-col overflow-hidden border bg-card lg:w-[280px] lg:shrink-0 xl:w-[240px]',
+          selectedId ? 'hidden lg:flex' : 'flex',
+        )}
+      >
+        <header className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h1 className="text-[17px] font-semibold text-foreground">Messages</h1>
+          <span className="text-[12px] text-muted-foreground tnum">
+            {conversations.length} {conversations.length === 1 ? 'chat' : 'chats'}
+          </span>
+        </header>
+
+        <div className="relative border-b border-border p-3">
+          <Search className="pointer-events-none absolute left-6 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Search conversations"
+            aria-label="Search conversations"
+            className="pl-9"
+          />
+        </div>
+
+        <ConversationFilterTabs
+          value={conversationFilter}
+          onChange={setConversationFilter}
+        />
+
+        <div
+          id="conversation-list"
+          role="tabpanel"
+          aria-labelledby={`conversation-filter-${conversationFilter}`}
+          className="min-h-0 flex-1 overflow-y-auto scroll-quiet"
+        >
+          {filteredConversations.length > 0 ? (
+            <ul>
+              {filteredConversations.map((conv) => {
+                const { name, online } = conversationTitle(conv);
+                const other = otherMember(conv);
+                const isActive = conv.id === selectedId;
+                return (
+                  <li key={conv.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(conv.id)}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors',
+                        isActive ? 'bg-secondary' : 'hover:bg-secondary',
+                      )}
+                    >
+                      <span className="relative">
+                        <Avatar className="h-9 w-9">
+                          {conv.type === 'dm' && other && profiles[other.userId]?.avatarUrl ? (
+                            <AvatarImage
+                              src={profiles[other.userId]?.avatarUrl ?? undefined}
+                              alt={name}
+                            />
+                          ) : null}
+                          <AvatarFallback style={avatarTone(other?.userId)}>
+                            {initials(name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        {online && (
+                          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-[#247b50]" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-foreground">
+                          {name}
+                        </span>
+                        <span className="block truncate text-[12px] text-muted-foreground">
+                          {conv.lastMessagePreview ?? 'No messages yet'}
+                        </span>
+                      </span>
+                      {conv.unreadCount > 0 && (
+                        <span
+                          aria-label={`${conv.unreadCount} unread ${conv.unreadCount === 1 ? 'message' : 'messages'}`}
+                          className="rounded-full bg-accent px-1.5 py-0.5 text-[12px] font-semibold leading-none text-accent-foreground tnum"
+                        >
+                          {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="px-4 py-10 text-center">
+              <p className="text-sm text-muted-foreground">{emptyListText}</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Column 2 — the selected thread */}
+      <section
+        className={cn(
+          'min-h-0 flex-1 overflow-hidden border border-border bg-card',
+          selectedId ? 'flex flex-col' : 'hidden lg:flex lg:flex-col',
+        )}
+      >
+        {selected ? (
+          <>
+            <header className="flex items-center gap-3 border-b border-border px-4 py-3">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="-ml-1 lg:hidden"
+                aria-label="Back to conversations"
+                onClick={() => setSelectedId(null)}
+              >
+                <ArrowLeft className="h-[18px] w-[18px]" />
+              </Button>
+              <Avatar className="h-9 w-9">
+                <AvatarFallback style={avatarTone(otherMember(selected)?.userId)}>
+                  {initials(conversationTitle(selected).name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {conversationTitle(selected).name}
+                </p>
+                <p className="text-[12px] text-muted-foreground">
+                  {typingUserId ? (
+                    <span className="text-accent">
+                      {profiles[typingUserId]?.displayName ?? 'Someone'} is typing…
+                    </span>
+                  ) : (
+                    threadStatusText(selected)
+                  )}
+                </p>
+              </div>
+
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                // The third column only exists from xl, so the trigger is hidden below it.
+                className="hidden shrink-0 xl:inline-flex"
+                aria-label={infoOpen ? 'Ẩn thông tin hội thoại' : 'Hiện thông tin hội thoại'}
+                aria-expanded={infoOpen}
+                aria-controls="conversation-info"
+                onClick={() => setInfoOpen((open) => !open)}
+              >
+                <Info className="h-[18px] w-[18px]" />
+              </Button>
+            </header>
+
