@@ -892,3 +892,419 @@ export default function MessagesPage() {
               </Button>
             </header>
 
+            <div
+              ref={messageScrollRef}
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions text"
+              aria-label="Conversation messages"
+              aria-busy={loadingOlder}
+              onScroll={(event) => {
+                handleMessageScroll();
+                if (event.currentTarget.scrollTop <= LOAD_OLDER_THRESHOLD_PX) {
+                  void loadOlderMessages();
+                }
+              }}
+              className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-4 py-4 scroll-quiet"
+            >
+              {messagesStatus === 'loading' ? (
+                <div className="flex h-full items-center justify-center text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  No messages yet. Say hello.
+                </div>
+              ) : (
+                messages.map((message) => {
+                  const mine = message.senderUserId === myId;
+                  const senderProfile = profiles[message.senderUserId];
+                  const isRecalled = message.status === 'deleted';
+                  const ageMs = Date.now() - new Date(message.sentAt).getTime();
+                  const canEdit = mine && !isRecalled && ageMs < EDIT_WINDOW_MS;
+                  const reactions = message.reactions ?? [];
+                  const isEditing = editingId === message.id;
+                  const hasAttachments = message.attachments.length > 0;
+                  const quotedName = message.replyTo
+                    ? message.replyTo.senderUserId === myId
+                      ? 'You'
+                      : profiles[message.replyTo.senderUserId]?.displayName ?? 'User'
+                    : '';
+                  return (
+                    <div
+                      key={message.id}
+                      className={cn('group flex items-end gap-2', mine ? 'justify-end' : 'justify-start')}
+                    >
+                      {!mine && (
+                        <Avatar className="h-7 w-7">
+                          <AvatarFallback style={avatarTone(message.senderUserId)}>
+                            {initials(senderProfile?.displayName)}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
+                      <div
+                        className={cn(
+                          'flex max-w-[75%] flex-col gap-1',
+                          mine ? 'items-end' : 'items-start',
+                        )}
+                      >
+                        {message.replyTo && !isRecalled && (
+                          <div
+                            className={cn(
+                              'max-w-full rounded border-l-2 border-accent bg-secondary px-2 py-1 text-left text-[12px] leading-snug',
+                            )}
+                          >
+                            <span className="block font-medium text-foreground">{quotedName}</span>
+                            <span className="block max-w-[16rem] truncate text-muted-foreground">
+                              {message.replyTo.status === 'deleted'
+                                ? 'Tin nhắn đã thu hồi'
+                                : message.replyTo.preview ?? 'Message'}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex items-end gap-1">
+                          {mine && !isRecalled && (
+                            <MessageMenuButton
+                              messageId={message.id}
+                              open={menuId === message.id}
+                              onToggle={() =>
+                                setMenuId(menuId === message.id ? null : message.id)
+                              }
+                            />
+                          )}
+
+                          <div
+                            className={cn(
+                              'max-w-full rounded px-3 py-2 text-sm',
+                              mine
+                                ? 'bg-accent text-accent-foreground'
+                                : 'bg-secondary text-foreground',
+                              // a picture without a caption fills the bubble edge to edge
+                              hasAttachments && !message.body && 'bg-transparent p-0',
+                              // a recalled message stays as a faint hint instead of vanishing
+                              isRecalled && 'bg-transparent px-2 py-1.5 text-muted-foreground',
+                            )}
+                          >
+                            {isEditing ? (
+                              <div className="flex w-56 flex-col gap-1.5">
+                                <input
+                                  autoFocus
+                                  value={editDraft}
+                                  onChange={(event) => setEditDraft(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter' && !event.shiftKey) {
+                                      event.preventDefault();
+                                      submitEdit(message);
+                                    } else if (event.key === 'Escape') {
+                                      setEditingId(null);
+                                      setEditDraft('');
+                                    }
+                                  }}
+                                  aria-label="Edit message"
+                                  className="h-8 rounded border border-input bg-card px-2 text-sm text-foreground outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
+                                />
+                                <div className="flex justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingId(null);
+                                      setEditDraft('');
+                                    }}
+                                    aria-label="Cancel edit"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-card/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={!editDraft.trim() || actionBusyId === message.id}
+                                    onClick={() => submitEdit(message)}
+                                    aria-label="Save edit"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-card/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                  >
+                                    {actionBusyId === message.id ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Check className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : isRecalled ? (
+                              <p className="text-[13px] italic opacity-70">
+                                Tin nhắn đã thu hồi
+                              </p>
+                            ) : (
+                              <>
+                                {message.body && (
+                                  <p className="whitespace-pre-wrap">{message.body}</p>
+                                )}
+                                {hasAttachments && (
+                                  <div className={cn(message.body && 'mt-2')}>
+                                    <ChatAttachments attachments={message.attachments} mine={mine} />
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            <p
+                              className={cn(
+                                'mt-0.5 text-[12px] tabular-nums',
+                                mine
+                                  ? 'text-accent-foreground/75'
+                                  : 'text-muted-foreground',
+                                isRecalled && 'mt-0',
+                              )}
+                            >
+                              <time
+                                dateTime={message.sentAt}
+                                title={timeAgo(message.sentAt)}
+                              >
+                                {formatChatMessageTime(message.sentAt)}
+                              </time>
+                              {message.editedAt && !isRecalled ? ' · Edited' : ''}
+                            </p>
+                          </div>
+
+                          {!mine && !isRecalled && (
+                            <MessageMenuButton
+                              messageId={message.id}
+                              open={menuId === message.id}
+                              onToggle={() =>
+                                setMenuId(menuId === message.id ? null : message.id)
+                              }
+                            />
+                          )}
+                        </div>
+
+                        {menuId === message.id && !isRecalled && (
+                          <div
+                            id={`msg-menu-${message.id}`}
+                            data-msg-menu
+                            role="group"
+                            aria-label="Message actions"
+                            className="flex w-full max-w-[16rem] flex-col gap-1 rounded border border-border bg-card p-1.5 shadow-sm"
+                          >
+                            <div className="flex items-center gap-2" role="group" aria-label="React with an emoji">
+                              {QUICK_REACTIONS.map((emoji) => {
+                                const active =
+                                  reactions.find((reaction) => reaction.reactionType === emoji)
+                                    ?.viewerReacted ?? false;
+                                return (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    aria-pressed={active}
+                                    aria-label={`React ${emoji}`}
+                                    onClick={() => toggleReaction(message, emoji)}
+                                    className={cn(
+                                      'inline-flex h-9 w-9 items-center justify-center rounded-full text-[16px] leading-none transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                      active && 'bg-accent/10',
+                                    )}
+                                  >
+                                    {emoji}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="flex w-full flex-wrap items-center gap-2 border-t border-border pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReplyTarget(message);
+                                  setMenuId(null);
+                                }}
+                                className="inline-flex h-9 items-center gap-1.5 rounded px-2 text-[12px] font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                <CornerUpLeft className="h-3.5 w-3.5" />
+                                Trả lời
+                              </button>
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditing(message)}
+                                  className="inline-flex h-9 items-center gap-1.5 rounded px-2 text-[12px] font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  Sửa
+                                </button>
+                              )}
+                              {/* Delete for me — the other side keeps the message.
+                                  Works on received messages too: it only hides the
+                                  message from my own timeline. */}
+                              <button
+                                type="button"
+                                onClick={() => deleteForMe(message)}
+                                disabled={actionBusyId === message.id}
+                                className="inline-flex h-9 items-center gap-1.5 rounded px-2 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                              >
+                                <EyeOff className="h-3.5 w-3.5" />
+                                Xoá
+                              </button>
+                              {mine && (
+                                /* Recall for everybody — both sides see a placeholder */
+                                <button
+                                  type="button"
+                                  onClick={() => recallForEveryone(message)}
+                                  disabled={actionBusyId === message.id}
+                                  className="inline-flex h-9 items-center gap-1.5 rounded px-2 text-[12px] font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Thu hồi
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {reactions.length > 0 && (
+                          <div
+                            className={cn(
+                              'flex flex-wrap gap-2',
+                              mine ? 'justify-end' : 'justify-start',
+                            )}
+                          >
+                            {reactions.map((reaction) => (
+                              <button
+                                key={reaction.reactionType}
+                                type="button"
+                                onClick={() => toggleReaction(message, reaction.reactionType)}
+                                aria-pressed={reaction.viewerReacted}
+                                aria-label={`${reaction.reactionType} reaction, ${reaction.count} ${
+                                  reaction.count === 1 ? 'person' : 'people'
+                                }${reaction.viewerReacted ? ', including you' : ''}`}
+                                className={cn(
+                                  'inline-flex min-h-7 items-center gap-1 whitespace-nowrap rounded border px-2 py-1 text-[12px] leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                  reaction.viewerReacted
+                                    ? 'border-accent bg-accent/10 text-foreground'
+                                    : 'border-border bg-card text-muted-foreground hover:border-accent',
+                                )}
+                              >
+                                <span>{reaction.reactionType}</span>
+                                <span className="tnum">{reaction.count}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="border-t border-border">
+              {error && (
+                <div className="flex items-center justify-between gap-2 bg-destructive/10 px-4 py-2 text-[12px] text-destructive">
+                  <span className="truncate">{error}</span>
+                  <button
+                    type="button"
+                    onClick={() => setError(null)}
+                    aria-label="Dismiss error"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-destructive/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+              {replyTarget && (
+                <div className="flex items-center justify-between gap-2 bg-secondary px-4 py-2">
+                  <div className="min-w-0 border-l-2 border-accent pl-2">
+                    <p className="text-[12px] font-medium text-foreground">
+                      Replying to{' '}
+                      {replyTarget.senderUserId === myId
+                        ? 'yourself'
+                        : profiles[replyTarget.senderUserId]?.displayName ?? 'User'}
+                    </p>
+                    <p className="truncate text-[12px] text-muted-foreground">
+                      {replyTarget.status === 'deleted'
+                        ? 'Tin nhắn đã thu hồi'
+                        : replyTarget.body ?? 'Message'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReplyTarget(null)}
+                    aria-label="Cancel reply"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+              <ChatAttachmentTray
+                pending={attachments.pending}
+                onRemove={attachments.remove}
+              />
+              <div className="flex items-center gap-2 px-4 py-3">
+                <AttachmentButton
+                  onPick={attachments.add}
+                  disabled={sending || uploading}
+                />
+                <input
+                  type="text"
+                  value={draft}
+                  onChange={(event) => {
+                    setDraft(event.target.value);
+                    // notify the other person we are typing (throttled)
+                    const now = Date.now();
+                    const connection = connectionRef.current;
+                    if (
+                      selectedId &&
+                      hubConnected &&
+                      connection &&
+                      now - lastTypingSentRef.current > 1500
+                    ) {
+                      lastTypingSentRef.current = now;
+                      connection.invoke('NotifyTyping', selectedId).catch(() => undefined);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder={replyTarget ? 'Viết trả lời' : 'Viết tin nhắn'}
+                  aria-label={replyTarget ? 'Viết trả lời' : 'Viết tin nhắn'}
+                  className="h-9 flex-1 rounded border border-input bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+                />
+                <Button
+                  size="icon"
+                  className="shrink-0"
+                  aria-label="Gửi tin nhắn"
+                  disabled={(!draft.trim() && attachments.pending.length === 0) || sending || uploading}
+                  onClick={handleSend}
+                >
+                  {sending || uploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+            <MessageSquarePlus className="h-6 w-6" />
+            <p>Choose someone on the left to see your conversation.</p>
+          </div>
+        )}
+      </section>
+
+      {/* Column 3 — conversation info, only from xl; the trigger is hidden below it */}
+      {selected && infoOpen && (
+        <ConversationInfoPanel
+          conversation={selected}
+          profiles={profiles}
+          messages={messages}
+          myId={myId}
+          partialHistory={Boolean(olderCursor)}
+          onClose={() => setInfoOpen(false)}
+          className="hidden xl:flex xl:w-[260px] xl:shrink-0"
+        />
+      )}
+    </div>
+  );
+}
