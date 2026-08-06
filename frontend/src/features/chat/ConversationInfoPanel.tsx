@@ -224,3 +224,162 @@ export default function ConversationInfoPanel({
           )}
         </div>
 
+        {/* Members (only meaningful for a group) */}
+        {isGroup && (
+          <section className="border-b border-border px-4 py-3">
+            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Thành viên ({conversation.members.length})
+            </h3>
+            <ul className="mt-2 space-y-0.5">
+              {conversation.members.map((member) => {
+                const profile = profiles[member.userId] ?? null;
+                const name =
+                  profile?.displayName ?? (member.userId === myId ? 'Bạn' : 'Thành viên');
+                return (
+                  <li key={member.userId}>
+                    <Link
+                      to={`/profile/${member.userId}`}
+                      className="flex items-center gap-2 rounded px-1 py-1 transition-colors hover:bg-secondary"
+                    >
+                      <Avatar className="h-7 w-7">
+                        {profile?.avatarUrl ? (
+                          <AvatarImage src={profile.avatarUrl} alt={name} />
+                        ) : null}
+                        <AvatarFallback className="text-[12px]" style={avatarTone(member.userId)}>
+                          {initials(name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                        {name}
+                      </span>
+                      {member.role !== 'member' && (
+                        <span className="shrink-0 text-[12px] capitalize text-muted-foreground">
+                          {member.role}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        {/* Photos & videos */}
+        <section className="border-b border-border px-4 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Ảnh/Video
+            </h3>
+            <span className="text-[12px] text-muted-foreground tnum">{media.length}</span>
+          </div>
+
+          {media.length === 0 ? (
+            <p className="mt-2 text-[12px] text-muted-foreground">
+              Chưa có ảnh hoặc video nào trong hội thoại này.
+            </p>
+          ) : (
+            <>
+              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                {visibleMedia.map((item) => (
+                  <a
+                    key={item.id}
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={item.fileName}
+                    className="relative block aspect-square overflow-hidden rounded border border-border bg-secondary"
+                  >
+                    {item.contentType.startsWith('image/') ? (
+                      <SafeImage
+                        src={item.url}
+                        alt={item.fileName}
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                        fallbackLabel=""
+                      />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center bg-[#111315] text-white/90">
+                        <Play className="h-5 w-5" />
+                      </span>
+                    )}
+                  </a>
+                ))}
+              </div>
+              {media.length > MEDIA_PREVIEW_COUNT && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 w-full"
+                  onClick={() => setShowAllMedia((open) => !open)}
+                >
+                  {showAllMedia ? 'Thu gọn' : `Xem tất cả ${media.length}`}
+                </Button>
+              )}
+            </>
+          )}
+        </section>
+
+        {/* Files */}
+        <section className="px-4 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+              File
+            </h3>
+            <span className="text-[12px] text-muted-foreground tnum">{files.length}</span>
+          </div>
+
+          {files.length === 0 ? (
+            <p className="mt-2 text-[12px] text-muted-foreground">
+              Chưa có file nào được gửi trong hội thoại này.
+            </p>
+          ) : (
+            <>
+              <ul className="mt-2 space-y-0.5">
+                {visibleFiles.map((item) => (
+                  <li key={item.id}>
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 rounded px-1 py-1.5 transition-colors hover:bg-secondary"
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">
+                        <FileText className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] text-foreground">
+                          {item.fileName}
+                        </span>
+                        <span className="block text-[12px] text-muted-foreground">
+                          {formatBytes(item.sizeBytes)} · {formatDate(item.sentAt)}
+                        </span>
+                      </span>
+                      <Download className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              {files.length > FILE_PREVIEW_COUNT && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 w-full"
+                  onClick={() => setShowAllFiles((open) => !open)}
+                >
+                  {showAllFiles ? 'Thu gọn' : `Xem tất cả ${files.length}`}
+                </Button>
+              )}
+            </>
+          )}
+        </section>
+
+        {partialHistory && (
+          <p className="px-4 pb-4 text-[12px] leading-relaxed text-muted-foreground">
+            Chỉ tính trên các tin nhắn đã tải. Cuộn lên trong hội thoại để tải thêm tệp cũ.
+          </p>
+        )}
+      </div>
+    </aside>
+  );
+}
