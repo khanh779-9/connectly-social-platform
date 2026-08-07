@@ -67,3 +67,51 @@ export function useChatTimeline(messages: ChatMessageDto[], conversationId: stri
     setAtBottom(distanceFromBottom <= BOTTOM_THRESHOLD_PX);
   }
 
+  function scrollToBottom(smooth = false) {
+    const node = scrollRef.current;
+    if (!node) return;
+
+    // Wait one frame so the new message is on screen before we scroll.
+    window.requestAnimationFrame(() => {
+      if (smooth && typeof node.scrollTo === 'function') {
+        node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+      } else {
+        node.scrollTop = node.scrollHeight;
+      }
+    });
+  }
+
+  useLayoutEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+
+    const old = previous.current;
+    const firstId = messages[0]?.id ?? null;
+    const lastId = messages[messages.length - 1]?.id ?? null;
+
+    if (old.conversationId !== conversationId || old.height === 0) {
+      // Another conversation (or the first render): start at the newest message.
+      node.scrollTop = node.scrollHeight;
+    } else if (firstId !== old.firstId && lastId === old.lastId) {
+      // Older messages were added on top. Move the scroll by the height that was
+      // added, so the messages the reader sees do not jump.
+      node.scrollTop = old.scrollTop + (node.scrollHeight - old.height);
+    } else if (atBottom) {
+      node.scrollTop = node.scrollHeight;
+    }
+
+    previous.current = {
+      conversationId,
+      height: node.scrollHeight,
+      scrollTop: node.scrollTop,
+      firstId,
+      lastId,
+    };
+  }, [messages, conversationId, atBottom]);
+
+  return {
+    scrollRef,
+    handleScroll,
+    scrollToBottom,
+  };
+}
