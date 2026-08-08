@@ -326,3 +326,263 @@ export default function SettingsPage() {
             </Card>
           )}
 
+          {section === 'account' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Account</CardTitle>
+                <CardDescription>How you appear across Connectly.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <dl className="grid gap-3 text-[13px] sm:grid-cols-2">
+                  <div>
+                    <dt className="text-[12px] font-medium text-muted-foreground">Display name</dt>
+                    <dd className="mt-0.5 text-foreground">
+                      {me?.displayName ?? displayName ?? '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[12px] font-medium text-muted-foreground">Email</dt>
+                    <dd className="mt-0.5 truncate text-foreground">{me?.email ?? '—'}</dd>
+                  </div>
+                </dl>
+                <p className="mt-3 text-[12px] text-muted-foreground">
+                  Your password and sign-in email are managed separately from your profile details.
+                </p>
+                <Link
+                  to="/profile"
+                  className="mt-4 inline-flex text-[13px] font-medium text-accent hover:underline"
+                >
+                  Edit your profile
+                </Link>
+              </CardContent>
+            </Card>
+          )}
+
+          {section === 'posting' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Posting</CardTitle>
+                <CardDescription>
+                  The audience preselected in the composer, so you do not have to change it on every
+                  post.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {privacy ? (
+                  <SettingRow
+                    label="Default audience for new posts"
+                    description="You can still change it per post before publishing."
+                    value={privacy.defaultPostVisibility}
+                    options={POST_VISIBILITIES}
+                    onChange={(value) => updatePrivacy({ defaultPostVisibility: value })}
+                    disabled={saving}
+                  />
+                ) : (
+                  <p className="text-[13px] text-muted-foreground">Loading…</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {section === 'privacy' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Privacy</CardTitle>
+                <CardDescription>
+                  Decide who can find you, see each part of your profile, and open your lists. If you
+                  pick a smaller group, everyone else just won't see that item.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {!privacy ? (
+                  <p className="text-[13px] text-muted-foreground">Loading…</p>
+                ) : (
+                  <>
+                    <section>
+                      <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Friend requests
+                      </h3>
+                      <div className="mt-2">
+                        <SettingRow
+                          label="Who can find you in search"
+                          description="Used when someone searches your name or @username. With “No one”, your profile still opens for people who already have the link."
+                          value={privacy.searchableAudience}
+                          options={SEARCH_VISIBILITIES}
+                          onChange={(value) => updatePrivacy({ searchableAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Who can comment on your posts"
+                          description="Applies to all your posts. People outside this group can still see them, they just can't comment."
+                          value={privacy.commentAudience}
+                          options={COMMENT_POLICIES}
+                          onChange={(value) => updatePrivacy({ commentAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Who can send you friend requests"
+                          description="“Friends of friends” means the person has to share a friend with you first."
+                          value={privacy.friendRequestPolicy}
+                          options={FRIEND_REQUEST_POLICIES}
+                          onChange={(value) => updatePrivacy({ friendRequestPolicy: value })}
+                          disabled={saving}
+                        />
+                      </div>
+                    </section>
+
+                    <section>
+                      <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Profile details
+                      </h3>
+                      <div className="mt-2">
+                        <SettingRow
+                          label="Profile photo"
+                          description="The small picture next to your name on posts, comments, and in search."
+                          value={privacy.avatarAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ avatarAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Cover photo"
+                          description="The big banner at the top of your profile."
+                          value={privacy.coverAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ coverAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Bio"
+                          description="The short text you write about yourself."
+                          value={privacy.bioAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ bioAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Email"
+                          description="The email shown on your profile. This isn't the email you log in with."
+                          value={privacy.emailAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ emailAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Date of birth"
+                          description="Shown as a full date, like 12 April 1995."
+                          value={privacy.birthdayAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ birthdayAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Phone number"
+                          description="Shown as a number people can tap to call."
+                          value={privacy.phoneAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ phoneAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="City"
+                          description="Shown as “Lives in …”."
+                          value={privacy.cityAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ cityAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Hometown"
+                          description="Shown as “From …”."
+                          value={privacy.hometownAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ hometownAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Website"
+                          description="A link on your profile, like your blog or portfolio."
+                          value={privacy.websiteAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ websiteAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Current location"
+                          description="Free text on your profile, like “Da Nang”. This is not the same as City."
+                          value={privacy.locationAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ locationAudience: value })}
+                          disabled={saving}
+                        />
+                      </div>
+                    </section>
+
+                    <section>
+                      <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Lists
+                      </h3>
+                      <div className="mt-2">
+                        <SettingRow
+                          label="Friends list"
+                          description="Who can open your Friends tab."
+                          value={privacy.friendListAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ friendListAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="People and pages you follow"
+                          description="Who can open your Following tab."
+                          value={privacy.followingAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ followingAudience: value })}
+                          disabled={saving}
+                        />
+                        <SettingRow
+                          label="Your followers"
+                          description="Who can open your Followers tab."
+                          value={privacy.followersAudience}
+                          options={AUDIENCES}
+                          onChange={(value) => updatePrivacy({ followersAudience: value })}
+                          disabled={saving}
+                        />
+                      </div>
+                    </section>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {section === 'messages' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Messages</CardTitle>
+                <CardDescription>
+                  This decides who can start a new conversation with you; replies in an existing
+                  conversation are always delivered.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {chat ? (
+                  <SettingRow
+                    label="Who can message you"
+                    value={chat.messagePrivacy}
+                    options={MESSAGE_POLICIES}
+                    onChange={updateMessages}
+                    disabled={saving}
+                  />
+                ) : (
+                  <p className="text-[13px] text-muted-foreground">Loading…</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {section === 'security' && <SecuritySection />}
+        </div>
+      </div>
+    </div>
+  );
+}
