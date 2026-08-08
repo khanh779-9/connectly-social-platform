@@ -113,3 +113,71 @@ export default function NotificationsPage() {
         )}
       </header>
 
+      {status === 'loading' && (
+        <div className="flex justify-center py-16 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      )}
+
+      {status === 'error' && (
+        <Card className="rounded border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Could not load notifications</p>
+          <p className="mt-1">{error}</p>
+          <Button variant="ghost" className="mt-4" onClick={load}>
+            Try again
+          </Button>
+        </Card>
+      )}
+
+      {status === 'ready' && items.length === 0 && (
+        <Card className="rounded border border-border bg-card p-10 text-center text-sm text-muted-foreground">
+          No notifications yet.
+        </Card>
+      )}
+
+      {items.length > 0 && (
+        <ul className="divide-y divide-border rounded border border-border bg-card">
+          {items.map((item) => {
+            const actor = item.actorUserId ? profiles[item.actorUserId] : null;
+            const isUnread = item.status.toLowerCase() === 'unread';
+            return (
+              <li
+                key={item.id}
+                className={isUnread ? 'bg-accent-soft/40 px-4 py-3' : 'px-4 py-3'}
+              >
+                <div className="flex items-start gap-3">
+                  <NotificationTypeIcon type={item.type} />
+
+                  <div className="min-w-0 flex-1">
+                    <NotificationContent
+                      notification={item}
+                      actor={actor}
+                      linkActor
+                    />
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
+                      <span>{timeAgo(item.createdAt)}</span>
+                      {isUnread && (
+                        <span className="font-medium text-accent">Unread</span>
+                      )}
+                    </p>
+                  </div>
+
+                  {isUnread && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 px-2 text-[12px]"
+                      onClick={() => handleMarkOne(item.id)}
+                    >
+                      Mark read
+                    </Button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
