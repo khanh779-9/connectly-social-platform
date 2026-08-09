@@ -116,3 +116,85 @@ export default function SecuritySection() {
             </p>
           )}
 
+          {status === 'ready' && sessions.length > 0 && (
+            <ul className="divide-y divide-border rounded border border-border">
+              {sessions.map((session) => {
+                const checked = selected.includes(session.id);
+                // "Last active" only adds information once the session has been reused.
+                const lastUsed =
+                  session.lastUsedAt &&
+                  new Date(session.lastUsedAt).getTime() - new Date(session.createdAt).getTime() > 60_000
+                    ? session.lastUsedAt
+                    : null;
+                return (
+                  <li
+                    key={session.id}
+                    className={cn(
+                      'flex items-start gap-3 px-3 py-3',
+                      checked && 'bg-accent-soft/40',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${session.deviceLabel ?? 'device'}`}
+                      className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                      checked={checked}
+                      disabled={session.current || working}
+                      onChange={() => toggle(session.id)}
+                    />
+
+                    <span className="mt-0.5 shrink-0 text-muted-foreground">
+                      <MonitorSmartphone className="h-[18px] w-[18px]" />
+                    </span>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="flex flex-wrap items-center gap-2 text-[13px] font-medium text-foreground">
+                        {session.deviceLabel ?? 'Unknown device'}
+                        {session.current && (
+                          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[12px] font-medium text-accent">
+                            This device
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
+                        {[session.ipAddress, session.location].filter(Boolean).join(' · ') ||
+                          'Address unavailable'}
+                      </p>
+                      <p className="mt-0.5 text-[12px] text-muted-foreground">
+                        Signed in {signedInAt(session.createdAt)}
+                        {lastUsed ? ` · last active ${timeAgo(lastUsed)}` : ''}
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {status === 'ready' && sessions.length > 0 && (
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-[12px] text-muted-foreground">
+                {selected.length === 0
+                  ? 'Select the devices you want to sign out.'
+                  : `${selected.length} selected.`}
+              </p>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={selected.length === 0 || working}
+                onClick={signOutSelected}
+              >
+                {working ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <LogOut className="h-4 w-4" />
+                )}
+                Sign out selected
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
