@@ -24,10 +24,6 @@ Mỗi service có endpoint `/health` trả JSON, dùng để kiểm tra nhanh tr
 
 **Port đã bị chiếm.** Chạy `stop-all.ps1` để dọn tiến trình cũ theo file PID và theo cổng 5000, 5201 đến 5204.
 
-## Log
-
-`run-all.ps1` ghi hai file cho mỗi service trong `backend/logs/`, một file cho stdout và một cho stderr. Thư mục này không được đưa lên git.
-
 ## Reset dữ liệu
 
 Dừng toàn bộ service, xoá bốn database rồi chạy lại script `deploy/docker/initdb/01-create-dbs.sh` hoặc bật `MIGRATE_ON_STARTUP=true` cho lần khởi động kế tiếp.
